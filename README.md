@@ -5,8 +5,7 @@ caption of a segment is the headline of its step. The model is the [UniAV](https
 (one ConvTransformer stream for video, one for audio, with cross-attention, 6-level pyramid) with an event score, the
 step boundaries and the language-aware classifier of UniAV: the segment vector is compared with the text vectors of
 the steps. As in [OV-AVEL](https://arxiv.org/abs/2411.11278) a class is only its text, so any list of steps can be
-scored at inference (by default the steps of the video's article, as the HT-Step article grounding task), and with
-`model.audio_text` the audio stream gets its own step classifier that has to agree with the video one.
+scored at inference (by default the steps of the video's article, as the HT-Step article grounding task).
 
 Python 3.13 and PyTorch 2.14, the versions of Google Colab. One or several GPUs (DistributedDataParallel).
 
@@ -73,8 +72,9 @@ row per second. Videos without features are skipped. Needs `HF_TOKEN` in the env
 Every epoch prints, on val_seen: the loss, R@0.5 (GT steps matched by one of the top-k predictions with IoU >= 0.5),
 CIDEr of the captions (headlines) of the matched steps, Acc (matched steps given the right step) and mAP (official
 article grounding mAP, tIoU 0.3-0.7, same numbers as `data/htstep/evaluation/eval_article_grounding.py` on the
-videos that have features). The checkpoint with the best R@0.5 goes to
-`ckpt/htstep/model_best.pth.tar`. Training stops when neither R@0.5 nor CIDEr has improved for `--patience` epochs
+videos that have features). The checkpoint with the best mAP goes to `ckpt/htstep/model_best.pth.tar` (R@0.5 is
+only logged: HT-Step leaves many real steps unannotated, and R@0.5 counts them as false detections). Training stops
+when neither mAP nor CIDEr has improved for `--patience` epochs
 (default 3). Other parameters are edited in `libs/core/config.py`.
 
 The omni head (an extra embedding loss against OmniRetriever step vectors, 3584-d) is off while

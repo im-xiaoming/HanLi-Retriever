@@ -39,6 +39,32 @@ def sigmoid_focal_loss(
     return loss
 
 
+def quality_focal_loss(
+    inputs: torch.Tensor,
+    targets: torch.Tensor,
+    beta: float = 2.0,
+    reduction: str = "none",
+) -> torch.Tensor:
+    """
+    Quality focal loss of GFL (Li et al., https://arxiv.org/abs/2006.04388): focal loss with soft targets.
+
+    inputs: logits, any shape
+    targets: soft labels in [0, 1], same shape as inputs (IoU of the predicted segment for positives, 0 elsewhere)
+    beta: exponent of |target - p|; the closer the prediction, the smaller the weight
+    reduction: 'none' | 'mean' | 'sum'
+    """
+    inputs = inputs.float() # (V,)
+    targets = targets.float() # (V,)
+    p = torch.sigmoid(inputs) # (V,)
+    loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none") * (targets - p).abs() ** beta
+
+    if reduction == "mean":
+        loss = loss.mean()
+    elif reduction == "sum":
+        loss = loss.sum()
+    return loss
+
+
 def ctr_diou_loss_1d(
     input_offsets: torch.Tensor,
     target_offsets: torch.Tensor,

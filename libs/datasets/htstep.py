@@ -1,6 +1,7 @@
 import os
 import csv
 import json
+import zipfile
 
 import numpy as np
 import torch
@@ -44,6 +45,7 @@ class HTStepDataset(Dataset):
         scale_factor,     # length ratio between two pyramid levels
         regression_range, # regression range of every pyramid level
         backbone_arch,    # (#conv, #stem, #pyramid branch), gives the number of levels
+        center_sample_radius=0.0,  # > 0: a point is positive only within this many strides of the segment centre
     ):
         self.feat_folder = feat_folder
         self.video_key = video_key
@@ -54,6 +56,7 @@ class HTStepDataset(Dataset):
         self.trunc_thresh = trunc_thresh
         self.crop_ratio = crop_ratio
         self.num_classes = num_classes
+        self.center_sample_radius = center_sample_radius
 
         # The classes are the 4958 steps of the taxonomy, each defined by its text (open vocabulary, as OV-AVEL).
         # Steps never seen in training are still in the pool. The step ids (global_step_index) run from 0 to 5784
@@ -73,6 +76,8 @@ class HTStepDataset(Dataset):
         for i, r in enumerate(rows):
             self.article_steps.setdefault((r['activity'], r['variation']), []).append(i)
             self.step_article[i] = (r['activity'], r['variation'])
+        self.articles = list(self.article_steps)   # 617 articles; a video's 'article' is its index here
+        self.article_idx = {a: i for i, a in enumerate(self.articles)}
 
         # read the annotations, keep the videos of the split
         self.data_list = self._load_json_db(json_file)
@@ -101,9 +106,17 @@ class HTStepDataset(Dataset):
             anns = [a for a in value['annotations'] if a['segment'][1] > a['segment'][0]][:self.num_classes]
             if len(anns) == 0:
                 continue
-            if not os.path.exists(os.path.join(self.feat_folder, key + '.npz')):
+            path = os.path.join(self.feat_folder, key + '.npz')
+            if not os.path.exists(path):
                 continue   # not extracted (yet)
+            try:
+                with np.load(path) as z:
+                    rows = min(z[self.video_key].shape[0], z['a768'].shape[0])   # one row per second; reads (CRC-checks) both
+            except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+                continue   # broken file
             segments = np.array([a['segment'] for a in anns], dtype=np.float32) # (N, 2)
+            if segments[:, 0].min() >= rows:
+                continue   # features cut short: every GT step starts after they end
             steps = np.array([self.step_row[a['id']] for a in anns], dtype=np.int64)
             dict_db += ({'id': key,
                          'fps': self.default_fps,
@@ -114,6 +127,7 @@ class HTStepDataset(Dataset):
                          'activity': value['activity'],
                          # every step of the video's article (all its segments share one article)
                          'cand': np.array(self.article_steps[self.step_article[int(steps[0])]], dtype=np.int64),
+                         'article': self.article_idx[self.step_article[int(steps[0])]],
             }, )
         return dict_db
 
@@ -173,7 +187,7 @@ class HTStepDataset(Dataset):
         points = self.point_generator(self.fpn_strides, data_dict['feats']['visual'], self.is_training)
 
         data_dict['gt_cls_labels'], data_dict['gt_offsets'] = label_points(
-            points, data_dict['segments'], data_dict['labels'], self.num_classes)
+            points, data_dict['segments'], data_dict['labels'], self.num_classes, self.center_sample_radius)
         data_dict['points'] = points
 
         # step of every GT segment (pool row), padded to num_classes with -1
@@ -181,6 +195,7 @@ class HTStepDataset(Dataset):
         sidx[:len(video_item['steps'])] = video_item['steps']
         data_dict['step_idx'] = torch.from_numpy(sidx) # (48,)
         data_dict['cand'] = torch.from_numpy(video_item['cand'])   # steps of the video's article, ~8
+        data_dict['article'] = video_item['article']   # index in self.articles, target of the article head
         data_dict['activity'] = video_item['activity']
         data_dict['gt_steps'] = video_item['steps'].tolist()
         data_dict['cap_text'] = [self.pool_text[s] for s in video_item['steps']]   # GT headlines

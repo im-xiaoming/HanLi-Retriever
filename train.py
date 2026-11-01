@@ -72,7 +72,8 @@ def main(args):
     omni = train_dataset.pool_omni_emb
     model.set_step_pool(
         torch.from_numpy(train_dataset.pool_emb).to(device), # (N, 512)
-        torch.from_numpy(omni).to(device) if omni is not None else None # (N, 3584)
+        torch.from_numpy(omni).to(device) if omni is not None else None, # (N, 3584)
+        [train_dataset.article_steps[a] for a in train_dataset.articles] # pool rows of every article's steps (list[list[int]])
     )
     # print('Parameters: %.1fM' % (sum(p.numel() for p in model.parameters()) / 1e6))
 
@@ -80,8 +81,9 @@ def main(args):
         if is_main:
             model.load_state_dict(torch.load(args.eval, map_location=device)['state_dict'])
             m = valid_one_epoch(val_loader, model, train_dataset.pool_text, device)
-            print(f"{args.eval}: R@0.5 {m['R@0.5']:.2f}  CIDEr {m['CIDEr']:.2f}  Acc {m['Acc']:.2f}"
-                  f"  mAP {m['mAP']:.2f}", flush=True)
+            art = f"  ArtAcc {m['ArtAcc']:.2f}" if m['ArtAcc'] >= 0 else ''
+            print(f"{args.eval}: R@0.3 {m['R@0.3']:.2f}  R@0.5 {m['R@0.5']:.2f}  R@0.7 {m['R@0.7']:.2f}  mIoU {m['mIoU']:.2f}  CIDEr {m['CIDEr']:.2f}  Acc {m['Acc']:.2f}"
+                  f"{art}  mAP {m['mAP']:.2f}", flush=True)
         if world_size > 1:
             dist.destroy_process_group()
         return
@@ -93,12 +95,14 @@ def main(args):
     optimizer = make_optimizer(model, cfg['opt'])
     scheduler = make_scheduler(optimizer, cfg['opt'], len(train_loader))
     model_ema = ModelEma(model, cfg['train_cfg']['ema_decay'])
-    model_ema.module.set_step_pool(model.pool_raw, model.omni_pool_raw )
+    model_ema.module.set_step_pool(model.pool_raw, model.omni_pool_raw, model.article_steps)
     record = RunRecord(cfg, world_size) if is_main else None
 
     """4. train / evaluate loop"""
     max_epochs = cfg['opt']['epochs'] + cfg['opt']['warmup_epochs']
-    best = {'R@0.5': (-1.0, 0), 'CIDEr': (-1.0, 0)}   # metric -> (best value, its epoch)
+    # checkpoint metric: the official article grounding mAP. R@0.5 (top-k) penalises real steps HT-Step leaves
+    # unannotated (GT covers ~20% of a video), so it is only logged
+    best = {'mAP': (-1.0, 0), 'CIDEr': (-1.0, 0)}   # metric -> (best value, its epoch)
     ckpt_path = os.path.join(ckpt_folder, 'model_best.pth.tar')
     for epoch in range(max_epochs):
         start = time.time()
@@ -111,17 +115,18 @@ def main(args):
             mark = ''
             if m['CIDEr'] > best['CIDEr'][0]:
                 best['CIDEr'] = (m['CIDEr'], epoch)
-            if m['R@0.5'] > best['R@0.5'][0]:
-                best['R@0.5'] = (m['R@0.5'], epoch)
-                mark = '  <- best R@0.5, saved'
+            if m['mAP'] > best['mAP'][0]:
+                best['mAP'] = (m['mAP'], epoch)
+                mark = '  <- best mAP, saved'
                 save_checkpoint({'epoch': epoch + 1, 'state_dict': model_ema.module.state_dict(), 'metrics': m},
                                 ckpt_folder, 'model_best.pth.tar')
+            art = f"  ArtAcc {m['ArtAcc']:.2f}" if m['ArtAcc'] >= 0 else ''
             print(f"epoch {epoch + 1:2d}/{max_epochs}  {time.time() - start:4.0f}s  loss {losses['final_loss']:.3f}"
-                  f" | R@0.5 {m['R@0.5']:.2f}  CIDEr {m['CIDEr']:.2f}  Acc {m['Acc']:.2f}  mAP {m['mAP']:.2f}{mark}",
+                  f" | R@0.3 {m['R@0.3']:.2f}  R@0.5 {m['R@0.5']:.2f}  R@0.7 {m['R@0.7']:.2f}  mIoU {m['mIoU']:.2f}  CIDEr {m['CIDEr']:.2f}  Acc {m['Acc']:.2f}{art}  mAP {m['mAP']:.2f}{mark}",
                   flush=True)
             record.add_epoch(epoch + 1, time.time() - start, losses, m,
                              {k: {'value': v, 'epoch': e + 1} for k, (v, e) in best.items()})
-            # early stop: neither the best R@0.5 nor the best CIDEr has improved for `patience` epochs
+            # early stop: neither the best mAP nor the best CIDEr has improved for `patience` epochs
             stop = args.patience > 0 and epoch - max(e for _, e in best.values()) >= args.patience
         if world_size > 1:   # every process follows the decision of process 0
             flag = [stop]
@@ -129,11 +134,11 @@ def main(args):
             stop = flag[0]
         if stop:
             if is_main:
-                print(f'Early stop: no new best R@0.5 / CIDEr for {args.patience} epochs', flush=True)
+                print(f'Early stop: no new best mAP / CIDEr for {args.patience} epochs', flush=True)
             break
 
     if is_main:
-        print(f"Best R@0.5 = {best['R@0.5'][0]:.2f} -> {ckpt_path}")
+        print(f"Best mAP = {best['mAP'][0]:.2f} -> {ckpt_path}")
         record.finish(stopped_early=stop, ckpt=ckpt_path)
     if world_size > 1:
         dist.destroy_process_group()
@@ -144,5 +149,5 @@ if __name__ == '__main__':
                                             'Several GPUs: torchrun --nproc_per_node=N train.py')
     p.add_argument('--eval', default='', help='only score this checkpoint, no training')
     p.add_argument('--patience', type=int, default=3,
-                   help='stop when neither R@0.5 nor CIDEr has improved for this many epochs (0 = never)')
+                   help='stop when neither mAP nor CIDEr has improved for this many epochs (0 = never)')
     main(p.parse_args())

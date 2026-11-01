@@ -183,16 +183,19 @@ def valid_one_epoch(
 ):
     """Score step detection, step classification and captioning on the validation split.
 
-    R@0.5 : share of GT steps matched by one of the top-k predictions (k = GT steps of the video) with IoU >= 0.5
+    R@t   : share of GT steps matched by one of the top-k predictions (k = GT steps of the video) with IoU >= t,
+            t = 0.3 / 0.5 / 0.7; mIoU the mean of that best IoU
     CIDEr : the usual word-overlap caption metric (headline of the predicted step); only scored on the GT steps
             that a prediction matches with IoU >= 0.3
     Acc   : share of those matched GT steps whose predicted step is the GT one
     mAP   : official HT-Step article grounding mAP (tIoU 0.3-0.7), on the validation videos that have features
+    ArtAcc: share of videos whose predicted article is the right one (article head only, else -1)
     """
     model.eval()
     best_ious, correct = [], []
     gts_txt, hyp = {}, {}
     preds, gt_all = [], []
+    art_ok = []
     for video_list in val_loader:
         for x in video_list:
             x['feats'] = {k: v.to(device) for k, v in x['feats'].items()}
@@ -214,8 +217,15 @@ def valid_one_epoch(
             preds.append((x['video_id'], x['activity'], r['segments'], r['scores'], r['labels'],
                           set(x['cand'].tolist())))
             gt_all.append((x['video_id'], x['activity'], gts, x['gt_steps']))
+            if r['article_pred'] >= 0:
+                art_ok.append(r['article_pred'] == x['article'])
 
-    return {'R@0.5': float(100 * np.mean(np.array(best_ious) >= 0.5)),
+    best_ious = np.array(best_ious)
+    return {'R@0.3': float(100 * np.mean(best_ious >= 0.3)),
+            'R@0.5': float(100 * np.mean(best_ious >= 0.5)),
+            'R@0.7': float(100 * np.mean(best_ious >= 0.7)),
+            'mIoU': float(100 * np.mean(best_ious)),
             'CIDEr': cider(gts_txt, hyp) * 100 if hyp else 0.0,
             'Acc': float(100 * np.mean(correct)) if correct else 0.0,
-            'mAP': article_grounding_map(preds, gt_all)}
+            'mAP': article_grounding_map(preds, gt_all),
+            'ArtAcc': float(100 * np.mean(art_ok)) if art_ok else -1.0}
