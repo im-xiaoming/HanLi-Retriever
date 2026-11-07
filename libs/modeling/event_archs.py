@@ -45,6 +45,8 @@ class EventCaptionTransformer(nn.Module):
         article_all_levels=False,  # article_head only: pool every pyramid level (else only level 0)
         article_attention_pool=False,  # article_head only: learned attention pooling instead of mean + max
         omni_span_head=False,  # omni: a learned head compresses a (start, end) segment into one omni vector
+        pool_queries=4,        # learned queries of the attention poolings (omni span head, article head)
+        omni_span_hidden=2048, # hidden size of the omni span head MLP
     ):
         super().__init__()
         self.fpn_strides = [scale_factor ** i for i in range(backbone_arch[-1] + 1)] # [1, 2, 4, 8, 16, 32]
@@ -73,7 +75,8 @@ class EventCaptionTransformer(nn.Module):
         self.article_cond = ArticleCondition(D, clip_dim) if article_cond else None
         self.article_head = None
         if article_head:
-            self.article_head = ArticleHead(D, head_dim, clip_dim, article_learned, article_attention_pool)
+            self.article_head = ArticleHead(D, head_dim, clip_dim, article_learned, article_attention_pool,
+                                            pool_queries)
         self.article_all_levels = article_all_levels
 
         # omni head: every point inside a GT segment learns the OmniRetriever vector of that segment (teacher),
@@ -82,7 +85,9 @@ class EventCaptionTransformer(nn.Module):
         self.omni_bank = None
         # omni span head: the omni vector of a GT segment (start, end given) by learned attention pooling,
         # trained against the teacher of the segment; without it a segment vector is the mean of the point vectors
-        self.omni_span = OmniSpanHead(D, omni_head_dim) if (self.use_omni and omni_span_head) else None
+        self.omni_span = None
+        if self.use_omni and omni_span_head:
+            self.omni_span = OmniSpanHead(D, omni_head_dim, pool_queries, omni_span_hidden)
         if self.use_omni:
             self.omni_bank = OmniCandidateBank(train_cfg.get('omni_bank_size', 4096), omni_head_dim)
         # OmniRetriever prototype of every article, for the omni article score (set_omni_teachers)

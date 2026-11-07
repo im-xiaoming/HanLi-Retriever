@@ -277,6 +277,7 @@ class ArticleHead(nn.Module):
         text_dim=512,      # size of the step text vectors
         num_articles=0,    # > 0: every article also gets its own learned vector, added to its text vector
         attention_pool=False,  # True: learned attention pooling of every level instead of mean + max
+        pool_queries=4,        # attention_pool only: learned queries
     ):
         super().__init__()
         self.vid = nn.Sequential(
@@ -286,7 +287,7 @@ class ArticleHead(nn.Module):
         )
         self.attention_pool = None
         if attention_pool:
-            self.attention_pool = AttentionPool(dim, head_dim, n_queries=4, hidden=2 * head_dim)
+            self.attention_pool = AttentionPool(dim, head_dim, n_queries=pool_queries, hidden=2 * head_dim)
         self.txt = nn.Linear(text_dim, head_dim)
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
         # learned part of every article vector. It starts at 0, so at first an article is its text only; with

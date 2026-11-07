@@ -46,6 +46,8 @@ cfg = {
         # omni: True = a learned head compresses a (start, end) segment into its omni vector (attention pooling of
         # the level-0 features + MLP), trained on the GT segments; OmniCos is then measured with it
         'omni_span_head': False,
+        'pool_queries': 4,          # learned queries of the attention poolings (omni span head, article head)
+        'omni_span_hidden': 2048,   # hidden size of the omni span head MLP
         'backbone_arch': [2, 3, 5],
         'scale_factor': 2,
         'input_dim_V': 768,
