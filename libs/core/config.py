@@ -41,6 +41,11 @@ cfg = {
         'article_learned': 0,
         # article_head only: True = pool every pyramid level (coarse levels see long stretches), False = level 0
         'article_all_levels': False,
+        # article_head only: True = learned attention pooling (4 queries) instead of mean + max
+        'article_attention_pool': False,
+        # omni: True = a learned head compresses a (start, end) segment into its omni vector (attention pooling of
+        # the level-0 features + MLP), trained on the GT segments; OmniCos is then measured with it
+        'omni_span_head': False,
         'backbone_arch': [2, 3, 5],
         'scale_factor': 2,
         'input_dim_V': 768,
@@ -69,6 +74,8 @@ cfg = {
             # omni head: weight of 1 - cos(student, teacher). InfoNCE alone ignores the part every teacher shares
             # (the train mean already has cos 0.80 with a val teacher), so the student stays far from its teacher
             'loss_weight_omni_cos': 1.0,
+            'loss_weight_omni_span_nce': 0.2,   # omni_span_head only: InfoNCE of the segment vectors
+            'loss_weight_omni_span_cos': 2.0,   # omni_span_head only: 1 - cos of the segment vectors
             'loss_weight_span': 0.2,
             'loss_weight_article': 0.5,   # article_head only
             'article_detach': False,      # article_head only: True = no article gradient into the backbone

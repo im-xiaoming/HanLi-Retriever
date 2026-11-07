@@ -135,6 +135,81 @@ def span_mean(
 
 
 
+class AttentionPool(nn.Module):
+    """Learned compression of a set of vectors into one vector (instead of a plain mean).
+
+    n_queries learned queries each score every input vector; each query takes the softmax-weighted sum of the
+    inputs (so it can focus on the vectors that matter, e.g. the frames where the action is visible). The query
+    outputs are concatenated and an MLP maps them to the output size.
+    """
+
+    def __init__(
+        self,
+        dim,            # size of every input vector
+        out_dim,        # size of the output vector
+        n_queries=4,    # learned queries (each one looks for something different)
+        hidden=2048,    # hidden size of the output MLP
+    ):
+        super().__init__()
+        self.score = nn.Linear(dim, n_queries)          # one score per (vector, query)
+        self.out = nn.Sequential(
+            nn.LayerNorm(n_queries * dim),
+            nn.Linear(n_queries * dim, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, out_dim),
+        )
+
+    def forward(
+        self,
+        x,     # (N, T, dim) N sets of T vectors
+        mask,  # (N, T) bool, True = this vector belongs to the set (at least one True per row)
+    ):
+        scores = self.score(x)                                         # (N, T, Q)
+        scores = scores.masked_fill(~mask[:, :, None], float('-inf'))
+        weights = scores.softmax(dim=1)                                # (N, T, Q), sums to 1 over T
+        pooled = torch.einsum('ntq,ntd->nqd', weights, x)              # (N, Q, dim)
+        return self.out(pooled.flatten(1))                             # (N, out_dim)
+
+
+def segment_masks(
+    length,   # real level-0 steps of the video
+    segs,     # (N, 2) segments (start, end), in level-0 steps
+    T,        # level-0 steps of the padded video
+):
+    """(N, T) bool: the level-0 steps covered by every segment (same rounding as span_mean, at least one step)."""
+    lo = segs[:, 0].floor().clamp(min=0, max=length - 1).long()             # (N,)
+    hi = segs[:, 1].ceil().long() + 1
+    hi = torch.maximum(hi.clamp(max=length), lo + 1)                        # (N,) exclusive end
+    t = torch.arange(T, device=segs.device)                                 # (T,)
+    return (t[None, :] >= lo[:, None]) & (t[None, :] < hi[:, None])
+
+
+class OmniSpanHead(nn.Module):
+    """Omni vector of a segment given its start and end: learned attention pooling of the level-0 features of
+    the segment, then an MLP to the OmniRetriever space (3584), L2-normalised. It is trained against the teacher
+    vector of the segment, so the vector it gives for a GT segment is exactly what OmniCos measures."""
+
+    def __init__(
+        self,
+        dim,            # channels of the level-0 features (1024)
+        out_dim=3584,   # size of the OmniRetriever vectors
+        n_queries=4,
+        hidden=2048,
+    ):
+        super().__init__()
+        self.pool = AttentionPool(dim, out_dim, n_queries, hidden)
+
+    def forward(
+        self,
+        feat0,    # (D, T) level-0 features of one video
+        length,   # real level-0 steps of the video
+        segs,     # (N, 2) segments (start, end) in level-0 steps
+    ):
+        masks = segment_masks(length, segs, feat0.shape[1])            # (N, T)
+        x = feat0.t()[None].expand(len(segs), -1, -1)                  # (N, T, D) the same video for every segment
+        return F.normalize(self.pool(x, masks), dim=-1)                # (N, out_dim)
+
+
 class SegmentContext(nn.Module):
     def __init__(self, dim: int = 512):
         super().__init__()
@@ -201,6 +276,7 @@ class ArticleHead(nn.Module):
         head_dim,          # size of the video and article vectors
         text_dim=512,      # size of the step text vectors
         num_articles=0,    # > 0: every article also gets its own learned vector, added to its text vector
+        attention_pool=False,  # True: learned attention pooling of every level instead of mean + max
     ):
         super().__init__()
         self.vid = nn.Sequential(
@@ -208,6 +284,9 @@ class ArticleHead(nn.Module):
             nn.GELU(),
             nn.Linear(head_dim, head_dim)
         )
+        self.attention_pool = None
+        if attention_pool:
+            self.attention_pool = AttentionPool(dim, head_dim, n_queries=4, hidden=2 * head_dim)
         self.txt = nn.Linear(text_dim, head_dim)
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
         # learned part of every article vector. It starts at 0, so at first an article is its text only; with
@@ -235,7 +314,10 @@ class ArticleHead(nn.Module):
     ):
         # video vector: every level is pooled and projected by the same MLP, then the levels are averaged.
         # Level 0 sees every second; the coarse levels see long stretches of the video (the whole dish).
-        per_level = [self.vid(self.pool(f, m)) for f, m in zip(feats, masks)]   # each (B, head_dim)
+        if self.attention_pool is not None:
+            per_level = [self.attention_pool(f.transpose(1, 2), m.squeeze(1)) for f, m in zip(feats, masks)]
+        else:
+            per_level = [self.vid(self.pool(f, m)) for f, m in zip(feats, masks)]   # each (B, head_dim)
         v = torch.stack(per_level, dim=0).mean(dim=0)                            # (B, head_dim)
         v = F.normalize(v, dim=-1)
 

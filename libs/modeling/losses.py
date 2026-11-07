@@ -199,3 +199,22 @@ def omni_loss(
     # 5. add the batch segments to the bank (mined when full)
     bank.add(batch_vectors, batch_steps, batch_keys, students)
     return {'nce': nce_loss, 'cos': cos_loss}
+
+
+def omni_span_loss(
+    students,     # (M, dim) omni span head vector of every GT segment, L2-normalised
+    teachers,     # (M, dim) teacher vector of the same segments, L2-normalised
+    steps,        # (M,) step of every segment
+    keys,         # (M,) segment id of every segment
+    bank,         # OmniCandidateBank: candidate negatives (not updated here, omni_loss adds the batch)
+    temperature,  # softmax temperature (0.05)
+):
+    """Losses of the omni span head, one anchor per GT segment:
+        nce : InfoNCE, its own teacher against the other segments of the batch and the bank (same steps masked)
+        cos : 1 - cosine(student, teacher)
+    """
+    nce_loss = omni_distill_loss(students, teachers, steps, keys,
+                                 teachers, steps, keys,      # in-batch negatives: the teachers of the batch
+                                 bank, temperature)
+    cos_loss = (1.0 - (students * teachers).sum(dim=-1)).mean()
+    return {'nce': nce_loss, 'cos': cos_loss}

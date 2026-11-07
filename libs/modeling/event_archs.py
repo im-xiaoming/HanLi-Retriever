@@ -4,10 +4,11 @@ from torch import nn
 from torch.nn import functional as F
 
 from .models import register_multimodal_meta_arch, make_multimodal_backbone
-from .losses import ctr_diou_loss_1d, sigmoid_focal_loss, info_NCE_loss, omni_loss
+from .losses import ctr_diou_loss_1d, sigmoid_focal_loss, info_NCE_loss, omni_loss, omni_span_loss
 from ..utils import batched_nms
 from .heads import (
-    EventHead, BoundaryHead, EmbedHead, SegmentContext, ArticleCondition, ArticleHead, span_mean
+    EventHead, BoundaryHead, EmbedHead, SegmentContext, ArticleCondition, ArticleHead, span_mean,
+    OmniSpanHead
 )
 from .omni_bank import OmniCandidateBank
 from ..datasets.helper import preprocessing
@@ -42,6 +43,8 @@ class EventCaptionTransformer(nn.Module):
         article_head=False,  # predict the article from the video; test_cfg['pred_article'] uses it at inference
         article_learned=0,   # article_head only: > 0 = number of articles, each gets a learned vector too
         article_all_levels=False,  # article_head only: pool every pyramid level (else only level 0)
+        article_attention_pool=False,  # article_head only: learned attention pooling instead of mean + max
+        omni_span_head=False,  # omni: a learned head compresses a (start, end) segment into one omni vector
     ):
         super().__init__()
         self.fpn_strides = [scale_factor ** i for i in range(backbone_arch[-1] + 1)] # [1, 2, 4, 8, 16, 32]
@@ -68,13 +71,18 @@ class EventCaptionTransformer(nn.Module):
                                     head_with_ln, clip_dim, omni_head_dim)
         self.seg_ctx = SegmentContext(head_dim)
         self.article_cond = ArticleCondition(D, clip_dim) if article_cond else None
-        self.article_head = ArticleHead(D, head_dim, clip_dim, article_learned) if article_head else None
+        self.article_head = None
+        if article_head:
+            self.article_head = ArticleHead(D, head_dim, clip_dim, article_learned, article_attention_pool)
         self.article_all_levels = article_all_levels
 
         # omni head: every point inside a GT segment learns the OmniRetriever vector of that segment (teacher),
         # against the other segments of the batch and a mined list of candidates (see omni_bank.py)
         self.use_omni = omni_head_dim > 0
         self.omni_bank = None
+        # omni span head: the omni vector of a GT segment (start, end given) by learned attention pooling,
+        # trained against the teacher of the segment; without it a segment vector is the mean of the point vectors
+        self.omni_span = OmniSpanHead(D, omni_head_dim) if (self.use_omni and omni_span_head) else None
         if self.use_omni:
             self.omni_bank = OmniCandidateBank(train_cfg.get('omni_bank_size', 4096), omni_head_dim)
         # OmniRetriever prototype of every article, for the omni article score (set_omni_teachers)
@@ -252,8 +260,9 @@ class EventCaptionTransformer(nn.Module):
         #                         (B, T)
         fpn_masks = torch.cat([m.squeeze(1) for m in msk], dim=1)        # (B, P)
         if self.training:
-            return self.losses(video_list, fpn_masks, ev, bd, qu, em, omni_em, raw0, len0, art_logits)
-        return self.inference(video_list, fpn_masks, ev, bd, qu, raw0, len0, cands, art_logits, omni_em, em)
+            return self.losses(video_list, fpn_masks, ev, bd, qu, em, omni_em, raw0, len0, art_logits, feats[0])
+        return self.inference(video_list, fpn_masks, ev, bd, qu, raw0, len0, cands, art_logits, omni_em, em,
+                              feats[0])
 
     def losses(
         self,
@@ -267,6 +276,7 @@ class EventCaptionTransformer(nn.Module):
         raw0,        # (B, D, T) level-0 features of the embedding head, not normalised (for the span means)
         len0,        # (B,) real level-0 steps of every video
         art_logits,  # (B, A) article head logits; None = no article head
+        feat0=None,  # (B, D, T) level-0 pyramid features (for the omni span head)
     ):
         dev = ev.device
         w = self.train_cfg
@@ -305,6 +315,12 @@ class EventCaptionTransformer(nn.Module):
         # <<<<<<<<<<<<<<<< Omni >>>>>>>>>>>>>>
         omni_emb_loss = torch.zeros((), device=dev)
         omni_cos_loss = torch.zeros((), device=dev)
+        omni_span_nce = torch.zeros((), device=dev)
+        omni_span_cos = torch.zeros((), device=dev)
+        if self.omni_span is not None:
+            span_losses = self.omni_span_losses(video_list, feat0, len0, cap_pool)
+            omni_span_nce = span_losses['nce']
+            omni_span_cos = span_losses['cos']
         if self.use_omni:
             omni_losses = omni_loss(video_list, pos, gt_cls, cap_pool, omni_em,
                                     self.omni_bank, self.train_cfg.get('omni_temperature', 0.05))
@@ -335,12 +351,42 @@ class EventCaptionTransformer(nn.Module):
         total = (ev_loss + w['loss_weight_reg'] * rg_loss + w['loss_weight_iou'] * iou_loss
                  + w['loss_weight_emb'] * emb_loss + w['loss_weight_omni_emb'] * omni_emb_loss
                  + w.get('loss_weight_omni_cos', 0.0) * omni_cos_loss
+                 + w.get('loss_weight_omni_span_nce', 0.0) * omni_span_nce
+                 + w.get('loss_weight_omni_span_cos', 0.0) * omni_span_cos
                  + w['loss_weight_span'] * span_loss
                  + w.get('loss_weight_article', 0.0) * art_loss)
 
         return {'ev_loss': ev_loss, 'reg_loss': rg_loss, 'iou_loss': iou_loss, 'emb_loss': emb_loss,
-                'omni_emb_loss': omni_emb_loss, 'omni_cos_loss': omni_cos_loss, 'span_loss': span_loss,
+                'omni_emb_loss': omni_emb_loss, 'omni_cos_loss': omni_cos_loss,
+                'omni_span_nce': omni_span_nce, 'omni_span_cos': omni_span_cos, 'span_loss': span_loss,
                 'art_loss': art_loss, 'final_loss': total}
+
+    def omni_span_losses(
+        self,
+        video_list,  # B dicts (segments in steps after the crop, labels = slots, omni_seg, omni_ok, seg_key)
+        feat0,       # (B, D, T) level-0 pyramid features
+        len0,        # (B,) real level-0 steps of every video
+        cap_pool,    # (B, 48) step (pool row) of every slot
+    ):
+        """Omni span head against the teachers: one anchor per GT segment (start and end given)."""
+        dev = feat0.device
+        students, teachers, steps, keys = [], [], [], []
+        for i, x in enumerate(video_list):
+            slots = x['labels'].to(dev)                                   # (M,) slot of every kept GT segment
+            has_teacher = x['omni_ok'].to(dev)[slots]                     # (M,)
+            if not has_teacher.any():
+                continue
+            slots = slots[has_teacher]
+            segments = x['segments'].to(dev).float()[has_teacher]         # (M', 2) in level-0 steps
+            students.append(self.omni_span(feat0[i], int(len0[i]), segments))   # (M', 3584)
+            teachers.append(x['omni_seg'].to(dev)[slots])
+            steps.append(cap_pool[i, slots])
+            keys.append(x['seg_key'].to(dev)[slots])
+        if not students:
+            zero = feat0.sum() * 0.0
+            return {'nce': zero, 'cos': zero}
+        return omni_span_loss(torch.cat(students), torch.cat(teachers), torch.cat(steps), torch.cat(keys),
+                              self.omni_bank, self.train_cfg.get('omni_temperature', 0.05))
 
     @torch.no_grad()
     def omni_eval(
@@ -348,15 +394,20 @@ class EventCaptionTransformer(nn.Module):
         omni_em_one,  # (P, 3584) student vectors of one video, L2-normalised
         length,       # real level-0 steps of the video
         video,        # the dict of the video (segments in steps, omni_seg, omni_ok)
+        feat0_one=None,  # (D, T) level-0 pyramid features of the video (for the omni span head)
     ):
         """Student vs teacher for every GT segment of one validation video that has a teacher vector.
-        Student vector of a segment = mean of the level-0 student vectors over the segment, L2-normalised."""
+        The GT start and end are given. Student vector of a segment = the omni span head on it if the model has
+        one, else the mean of the level-0 student vectors over the segment; L2-normalised."""
         has_teacher = video['omni_ok'][:len(video['segments'])]       # (n,)
         if not has_teacher.any():
             return None, None
-        level0 = omni_em_one[:self.max_seq_len].t()                    # (3584, T0): level 0 = first T0 points
-        segments = video['segments'][has_teacher].to(level0.device).float()   # (n', 2) in steps
-        students = F.normalize(span_mean(level0, length, segments), dim=-1)    # (n', 3584)
+        segments = video['segments'][has_teacher].to(omni_em_one.device).float()   # (n', 2) in steps
+        if self.omni_span is not None:
+            students = self.omni_span(feat0_one, length, segments)                # (n', 3584)
+        else:
+            level0 = omni_em_one[:self.max_seq_len].t()                # (3584, T0): level 0 = first T0 points
+            students = F.normalize(span_mean(level0, length, segments), dim=-1)    # (n', 3584)
         teachers = video['omni_seg'][:len(video['segments'])][has_teacher]     # (n', 3584)
         return students.cpu(), teachers.cpu()
 
@@ -374,6 +425,7 @@ class EventCaptionTransformer(nn.Module):
         art_logits,  # (B, A) article head logits; None = no article head
         omni_em=None,  # (B, P, 3584) student vectors of the omni head; None = no omni head
         em=None,       # (B, P, D) step vectors of the embedding head (for the article scores)
+        feat0=None,    # (B, D, T) level-0 pyramid features (for the omni span head)
     ):
         """Score of a segment = event score times IoU-quality score. Returns one dict per video:
         segments (K, 2) in seconds, best first; labels (K,) the step of every segment, label_probs (K,) its
@@ -430,7 +482,7 @@ class EventCaptionTransformer(nn.Module):
             # omni head: student and teacher vector of every GT segment, for the distance between them
             omni_student, omni_teacher = None, None
             if omni_em is not None:
-                omni_student, omni_teacher = self.omni_eval(omni_em[b], int(len0[b]), v)
+                omni_student, omni_teacher = self.omni_eval(omni_em[b], int(len0[b]), v, feat0[b])
 
             # scores of every article (head, step evidence, omni kNN), compared in valid_one_epoch
             article_scores = {}
