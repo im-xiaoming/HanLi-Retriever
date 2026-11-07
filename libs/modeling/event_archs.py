@@ -40,6 +40,7 @@ class EventCaptionTransformer(nn.Module):
         backbone_type='convTransformer',  # 'convTransformer', 'convPooler' (TemporalMaxer) or 'dynE' (DyFADet)
         article_cond=False,  # condition the features on the article's step texts (ActionFormer-T)
         article_head=False,  # predict the article from the video; test_cfg['pred_article'] uses it at inference
+        article_learned=0,   # article_head only: > 0 = number of articles, each gets a learned vector too
     ):
         super().__init__()
         self.fpn_strides = [scale_factor ** i for i in range(backbone_arch[-1] + 1)] # [1, 2, 4, 8, 16, 32]
@@ -66,7 +67,7 @@ class EventCaptionTransformer(nn.Module):
                                     head_with_ln, clip_dim, omni_head_dim)
         self.seg_ctx = SegmentContext(head_dim)
         self.article_cond = ArticleCondition(D, clip_dim) if article_cond else None
-        self.article_head = ArticleHead(D, head_dim, clip_dim) if article_head else None
+        self.article_head = ArticleHead(D, head_dim, clip_dim, article_learned) if article_head else None
 
         # omni head: every point inside a GT segment learns the OmniRetriever vector of that segment (teacher),
         # against the other segments of the batch and a mined list of candidates (see omni_bank.py)

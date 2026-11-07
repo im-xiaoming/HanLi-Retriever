@@ -35,6 +35,9 @@ cfg = {
         'article_cond': False,
         # predict the video's article (617 recipes) from the video, so it needs not be given at inference
         'article_head': False,
+        # article_head only: 617 = every article gets its own learned vector (zero at start) on top of its text;
+        # 0 = the article is its text only
+        'article_learned': 0,
         'backbone_arch': [2, 3, 5],
         'scale_factor': 2,
         'input_dim_V': 768,

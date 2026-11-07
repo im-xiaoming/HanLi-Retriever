@@ -195,7 +195,13 @@ class ArticleHead(nn.Module):
     """Picks the video's article (recipe) by its text, so the article needs not be given at inference.
     logits = scale * pooled video @ article vectors; an article vector is the mean of its step text vectors."""
 
-    def __init__(self, dim, head_dim, text_dim=512):
+    def __init__(
+        self,
+        dim,               # channels of the level-0 features
+        head_dim,          # size of the video and article vectors
+        text_dim=512,      # size of the step text vectors
+        num_articles=0,    # > 0: every article also gets its own learned vector, added to its text vector
+    ):
         super().__init__()
         self.vid = nn.Sequential(
             nn.Linear(2 * dim, head_dim),
@@ -204,6 +210,11 @@ class ArticleHead(nn.Module):
         )
         self.txt = nn.Linear(text_dim, head_dim)
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        # learned part of every article vector. It starts at 0, so at first an article is its text only; with
+        # ~9 train videos per article it can learn what the text does not tell apart (similar dishes)
+        self.article_learned = None
+        if num_articles > 0:
+            self.article_learned = nn.Parameter(torch.zeros(num_articles, head_dim))
 
     def forward(
         self,
@@ -216,7 +227,10 @@ class ArticleHead(nn.Module):
         mx = f.masked_fill(m == 0, -1e4).max(-1).values
         v = F.normalize(self.vid(torch.cat((mean, mx), -1)), dim=-1)      # (B, head_dim), head_dim = 2D
         
-        t = F.normalize(self.txt(art_txt), dim=-1)                       # (A, head_dim)
+        t = self.txt(art_txt)                                            # (A, head_dim)
+        if self.article_learned is not None:
+            t = t + self.article_learned
+        t = F.normalize(t, dim=-1)
         
         return self.logit_scale.exp().clamp(max=100) * v @ t.t()         # (B, A)
 
