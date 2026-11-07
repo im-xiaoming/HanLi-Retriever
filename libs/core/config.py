@@ -88,6 +88,10 @@ cfg = {
             # article_head only: use the predicted article instead of the given one (conditioning and step choice)
             'pred_article': False,
             'pred_article_topk': 1,   # pred_article only: the candidates are the steps of the top-k articles
+            # article_head only: True = every step competes, score + article_soft_weight * log p(its article | video)
+            # (no hard choice of one article; overrides 'article' and 'pred_article' for the step choice)
+            'article_soft': False,
+            'article_soft_weight': 1.0,
         },
     },
 

@@ -381,8 +381,17 @@ class EventCaptionTransformer(nn.Module):
 
             # step of every segment, among the steps of the article (or all of them)
             # cands: list tensor 1D
-            cand = cands[b] if t['article'] else torch.arange(len(pool_f), device=ev.device)
-            logp = F.log_softmax(scale * span @ pool_f[cand].t(), dim=-1)    # (K, C)
+            if t.get('article_soft') and art_logits is not None:
+                # soft article choice: every step of the taxonomy competes, and each one adds the log-probability
+                # of its article given the video (article head). A wrong top-1 article no longer forbids the
+                # right step: a step that matches the segment well can still win through a likely-enough article.
+                cand = torch.arange(len(pool_f), device=ev.device)                   # (4958,)
+                log_p_step = F.log_softmax(scale * span @ pool_f.t(), dim=-1)        # (K, 4958)
+                log_p_article = F.log_softmax(art_logits[b].float(), dim=-1)         # (A,)
+                logp = log_p_step + t.get('article_soft_weight', 1.0) * log_p_article[self.article_of_step]
+            else:
+                cand = cands[b] if t['article'] else torch.arange(len(pool_f), device=ev.device)
+                logp = F.log_softmax(scale * span @ pool_f[cand].t(), dim=-1)    # (K, C)
             lp, j = logp.max(-1) # j = (K,)
 
             # steps to seconds (see __getitem__ of the dataset)
