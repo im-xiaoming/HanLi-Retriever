@@ -494,6 +494,12 @@ class EventCaptionTransformer(nn.Module):
                     art_logits[b] if art_logits is not None else None,
                     ev[b].sigmoid(),
                 )
+                # with article conditioning on the GIVEN article, the step and omni vectors already carry the
+                # true article's step texts: their article scores would see the answer, so they are dropped
+                # (the head reads the features before the conditioning and stays fair)
+                if self.article_cond is not None and not t.get('pred_article'):
+                    article_scores['step'] = None
+                    article_scores['omni'] = None
                 article_scores = {name: score.float().cpu() for name, score in article_scores.items()
                                   if score is not None}
 

@@ -249,6 +249,8 @@ def article_accuracies(
     if not scores:
         return {}
     names = sorted(scores[0])
+    if not names:
+        return {}
     correct = {name: [] for name in names + ['fused']}
     for video_scores, article in zip(scores, truth):
         fused = 0.0
