@@ -118,6 +118,12 @@ class HTStepDataset(Dataset):
                 logger.exception(f'Excepion error: {e}')
                 continue
             
+            # one feature row per second: many more rows than the annotated duration means the downloaded video
+            # is another version of it (re-upload, intro added), so the annotated times do not match it
+            duration = value.get('duration')
+            if duration and rows > duration + max(5.0, 0.05 * duration):
+                continue
+
             segments = np.array([a['segment'] for a in anns], dtype=np.float32) # (N, 2)
             if segments[:, 0].min() >= rows:
                 continue   # features cut short: every GT step starts after they end
