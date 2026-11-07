@@ -2,6 +2,11 @@ import torch
 from torch.nn import functional as F
 from torch import Tensor
 
+
+def info_NCE_loss(logits, C, targets, scale):
+    return F.cross_entropy(scale * logits @  C.t(), targets)
+
+
 def sigmoid_focal_loss(
     inputs: torch.Tensor,
     targets: torch.Tensor,
@@ -39,30 +44,6 @@ def sigmoid_focal_loss(
     return loss
 
 
-def quality_focal_loss(
-    inputs: torch.Tensor,
-    targets: torch.Tensor,
-    beta: float = 2.0,
-    reduction: str = "none",
-) -> torch.Tensor:
-    """
-    Quality focal loss of GFL (Li et al., https://arxiv.org/abs/2006.04388): focal loss with soft targets.
-
-    inputs: logits, any shape
-    targets: soft labels in [0, 1], same shape as inputs (IoU of the predicted segment for positives, 0 elsewhere)
-    beta: exponent of |target - p|; the closer the prediction, the smaller the weight
-    reduction: 'none' | 'mean' | 'sum'
-    """
-    inputs = inputs.float() # (V,)
-    targets = targets.float() # (V,)
-    p = torch.sigmoid(inputs) # (V,)
-    loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none") * (targets - p).abs() ** beta
-
-    if reduction == "mean":
-        loss = loss.mean()
-    elif reduction == "sum":
-        loss = loss.sum()
-    return loss
 
 
 def ctr_diou_loss_1d(
@@ -126,3 +107,84 @@ def ctr_diou_loss_1d(
         loss = loss.sum()
 
     return loss, iouk
+
+
+def omni_distill_loss(
+    students,         # (N, dim) student vector of every positive point, L2-normalised
+    teachers,         # (N, dim) teacher vector of the GT segment of every point, L2-normalised
+    anchor_steps,     # (N,) step of the GT segment of every point
+    anchor_keys,      # (N,) segment id of the GT segment of every point
+    batch_vectors,    # (M, dim) teacher vectors of every GT segment of the batch (the in-batch negatives)
+    batch_steps,      # (M,) their steps
+    batch_keys,       # (M,) their segment ids
+    bank,             # OmniCandidateBank (extra negatives)
+    temperature,      # softmax temperature (0.05)
+):
+    """InfoNCE: each student must pick its own teacher among
+        - its own teacher (the positive, column 0),
+        - the teachers of the other segments of the batch,
+        - the candidates of the bank.
+    A negative with the same step as the anchor is masked: it is the same action in another video,
+    not a wrong answer.
+    """
+    # similarity to the positive: (N, 1)
+    positive = (students * teachers).sum(dim=-1, keepdim=True)
+
+    # candidate negatives: the batch segments, then the bank
+    device = students.device
+    negative_vectors = torch.cat([batch_vectors, bank.vectors.to(device, batch_vectors.dtype)], dim=0)  # (K, dim)
+    negative_steps = torch.cat([batch_steps, bank.steps.to(device)], dim=0)                            # (K,)
+    negative_keys = torch.cat([batch_keys, bank.keys.to(device)], dim=0)                               # (K,)
+
+    negative = students @ negative_vectors.t()                                                  # (N, K)
+    same_segment = anchor_keys[:, None] == negative_keys[None, :]                                # (N, K)
+    same_step = anchor_steps[:, None] == negative_steps[None, :]                                 # (N, K)
+    negative = negative.masked_fill(same_segment | same_step, float('-inf'))
+
+    logits = torch.cat([positive, negative], dim=1) / temperature                                # (N, 1 + K)
+    target = torch.zeros(len(students), dtype=torch.long, device=students.device)                # column 0
+    return F.cross_entropy(logits, target)
+
+
+def omni_loss(
+    video_list,  # B dicts, one per video (omni_seg, omni_ok, seg_key)
+    pos,         # (B, P) bool, points inside a GT segment
+    gt_cls,      # (B, P, 48) one-hot slot of the GT segment of every point
+    cap_pool,    # (B, 48) step (pool row) of every slot, -1 = empty slot
+    omni_em,     # (B, P, 3584) student vector of every point, L2-normalised
+    bank,        # OmniCandidateBank (omni_bank.py): mined candidate negatives, updated here
+    temperature, # softmax temperature (0.05)
+):
+    """Distillation of the OmniRetriever segment vectors (teacher) into the omni head (student)."""
+    dev = omni_em.device
+    teacher_all = torch.stack([x['omni_seg'] for x in video_list]).to(dev)   # (B, 48, 3584)
+    has_teacher = torch.stack([x['omni_ok'] for x in video_list]).to(dev)    # (B, 48)
+    seg_keys = torch.stack([x['seg_key'] for x in video_list]).to(dev)       # (B, 48)
+
+    # 1. the anchors: every positive point whose GT segment has a teacher vector
+    video_of_point = pos.nonzero(as_tuple=True)[0]          # (N',) video of every positive point
+    slot_of_point = gt_cls[pos].argmax(-1)                  # (N',) GT segment (slot) of every positive point
+    point_has_teacher = has_teacher[video_of_point, slot_of_point]   # (N',)
+    if not point_has_teacher.any():
+        return omni_em.sum() * 0.0   # no teacher in this batch: a zero loss that keeps the graph
+
+    students = omni_em[pos][point_has_teacher]                                     # (N, 3584)
+    anchor_video = video_of_point[point_has_teacher]                               # (N,)
+    anchor_slot = slot_of_point[point_has_teacher]                                 # (N,)
+    teachers = teacher_all[anchor_video, anchor_slot]                              # (N, 3584)
+    anchor_steps = cap_pool[anchor_video, anchor_slot]                             # (N,)
+    anchor_keys = seg_keys[anchor_video, anchor_slot]                              # (N,)
+
+    # 2. the in-batch negatives: every GT segment of the batch that has a teacher vector
+    batch_vectors = teacher_all[has_teacher]                                       # (M, 3584)
+    batch_steps = cap_pool[has_teacher]                                            # (M,)
+    batch_keys = seg_keys[has_teacher]                                             # (M,)
+
+    # 3. the loss, against the batch and the candidate bank as it was before this batch
+    loss = omni_distill_loss(students, teachers, anchor_steps, anchor_keys,
+                             batch_vectors, batch_steps, batch_keys,
+                             bank, temperature)
+
+    # 4. add the batch segments to the bank (mined when full)
+    bank.add(batch_vectors, batch_steps, batch_keys, students)
+    return loss

@@ -65,7 +65,7 @@ def truncate_feats(
         # random window position
         st = random.randint(0, feat_len - max_seq_len)
         ed = st + max_seq_len
-        window = torch.as_tensor([st, ed], dtype=torch.float32) # (2,); st <= 26, 26 <= ed <= 256
+        window = torch.tensor([st, ed], dtype=torch.float32) # (2,)
 
         # intersection of the window with every segment
         #              (1, 2)       (n, 1)
@@ -96,10 +96,10 @@ def truncate_feats(
 
 
 def label_points(
-    points: list[torch.Tensor],       # one entry per level, each (T_l, 4): (t, regression range low, high, stride)
+    points,       # one entry per level, each (T_l, 4): (t, regression range low, high, stride)
     gt_segments,  # (n, 2) GT segments, in steps
     gt_labels,    # (n,) index of every segment within the video
-    num_classes: int = 48,  # at most this many GT segments per video (48)
+    num_classes,  # at most this many GT segments per video (48)
     center_sample_radius: float = 0.0,  # > 0: positive only within this many strides of the centre (ActionFormer)
 ):
         """Training targets of every pyramid point (as in ActionFormer).
@@ -157,9 +157,10 @@ def label_points(
             (lens <= (min_len[:, None] + 1e-3)), # (F T, n)
             (lens < float('inf'))
         ).to(reg_targets.dtype)
+        
 
         # cls_targets: F T x C; reg_targets F T x 2
-        gt_label_one_hot = F.one_hot(gt_labels, num_classes).to(reg_targets.dtype) # (n, 16); sub-identity matrix
+        gt_label_one_hot = F.one_hot(gt_labels, num_classes).to(reg_targets.dtype) # (n, 16)
         cls_targets = min_len_mask @ gt_label_one_hot # (F T, 16)
         # several GT segments with the same label and the same boundaries
         cls_targets.clamp_(min=0.0, max=1.0)

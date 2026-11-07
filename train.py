@@ -1,5 +1,6 @@
 # python libraries
 import argparse
+import ast
 import os
 import time
 
@@ -33,6 +34,33 @@ def setup_distributed():
     return dist.get_rank(), dist.get_world_size(), device
 
 
+def apply_overrides(settings):
+    """--set model.article_head=True opt.epochs=8 ... : change cfg entries without editing config.py.
+    The key is a dotted path into cfg; the value is a Python literal (True, 0.5, [0.9, 1.0], 'text')."""
+    for setting in settings:
+        key, value = setting.split('=', 1)
+        path = key.split('.')
+        node = cfg
+        for name in path[:-1]:
+            node = node[name]
+        if path[-1] not in node:
+            raise KeyError(f'--set {key}: no such entry in the config')
+        try:
+            node[path[-1]] = ast.literal_eval(value)
+        except (ValueError, SyntaxError):
+            node[path[-1]] = value   # a plain word, kept as a string
+        print(f'config: {key} = {node[path[-1]]!r}', flush=True)
+
+
+def metrics_line(m):
+    """One line with the validation metrics; the ones that are -1 (head not used) are left out."""
+    parts = [f"R@0.5 {m['R@0.5']:.2f}", f"mIoU {m['mIoU']:.2f}", f"Acc {m['Acc']:.2f}", f"mAP {m['mAP']:.2f}"]
+    for name in ['ArtAcc', 'ArtAcc_step', 'ArtAcc_omni', 'ArtAcc_fused', 'OmniCos', 'OmniR@1']:
+        if m.get(name, -1) >= 0:
+            parts.append(f"{name} {m[name]:.2f}")
+    return '  '.join(parts)
+
+
 def main(args):
     """main function: train, then evaluate after every epoch"""
 
@@ -41,16 +69,20 @@ def main(args):
     rank, world_size, device = setup_distributed()
     is_main = rank == 0   # only process 0 evaluates, saves checkpoints and prints
     rng_generator = fix_random_seed(cfg['init_rand_seed'], include_cuda=True)
+    apply_overrides(args.set)
+    if args.output:
+        cfg['output_folder'] = os.path.join('./ckpt', args.output)
     ckpt_folder = cfg['output_folder']
-    if not cfg['dataset']['omni_emb_file']:
-        cfg['model']['omni_head_dim'] = 0   # no OmniRetriever caption vectors: no omni head
+    
 
     """2. datasets / dataloaders"""
     # ======================================= LOADER =======================================================
     data_cfg = dict(cfg['dataset'], scale_factor=cfg['model']['scale_factor'],
                     regression_range=cfg['model']['regression_range'], backbone_arch=cfg['model']['backbone_arch'])
+    
     train_dataset = make_dataset('htstep', True, ['train'], **data_cfg)
     val_dataset = make_dataset('htstep', False, ['val_seen'], **data_cfg)
+    
     # every process trains on its own share of the training videos, reshuffled every epoch
     train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True,
                                        seed=cfg['init_rand_seed'], drop_last=True)
@@ -69,21 +101,21 @@ def main(args):
     model = make_multimodal_meta_arch('EventCaptionTransformer', **cfg['model'])
     model.to(device)
     # the classes: text vectors of every step of the taxonomy (no annotation needed)
-    omni = train_dataset.pool_omni_emb
     model.set_step_pool(
         torch.from_numpy(train_dataset.pool_emb).to(device), # (N, 512)
-        torch.from_numpy(omni).to(device) if omni is not None else None, # (N, 3584)
-        [train_dataset.article_steps[a] for a in train_dataset.articles] # pool rows of every article's steps (list[list[int]])
+        [train_dataset.article_steps[a] for a in train_dataset.articles] # pool rows of every article's steps
     )
+    # the train segments with an OmniRetriever vector: the omni kNN article score compares a video with them
+    if model.use_omni:
+        omni_vectors, omni_articles = train_dataset.omni_teacher_bank()
+        model.set_omni_teachers(torch.from_numpy(omni_vectors).to(device), torch.from_numpy(omni_articles).to(device))
     # print('Parameters: %.1fM' % (sum(p.numel() for p in model.parameters()) / 1e6))
 
     if args.eval:   # score a checkpoint, no training
         if is_main:
             model.load_state_dict(torch.load(args.eval, map_location=device)['state_dict'])
             m = valid_one_epoch(val_loader, model, train_dataset.pool_text, device)
-            art = f"  ArtAcc {m['ArtAcc']:.2f}" if m['ArtAcc'] >= 0 else ''
-            print(f"{args.eval}: R@0.3 {m['R@0.3']:.2f}  R@0.5 {m['R@0.5']:.2f}  R@0.7 {m['R@0.7']:.2f}  mIoU {m['mIoU']:.2f}  CIDEr {m['CIDEr']:.2f}  Acc {m['Acc']:.2f}"
-                  f"{art}  mAP {m['mAP']:.2f}", flush=True)
+            print(f"{args.eval}: {metrics_line(m)}", flush=True)
         if world_size > 1:
             dist.destroy_process_group()
         return
@@ -95,15 +127,20 @@ def main(args):
     optimizer = make_optimizer(model, cfg['opt'])
     scheduler = make_scheduler(optimizer, cfg['opt'], len(train_loader))
     model_ema = ModelEma(model, cfg['train_cfg']['ema_decay'])
-    model_ema.module.set_step_pool(model.pool_raw, model.omni_pool_raw, model.article_steps)
+    model_ema.module.set_step_pool(model.pool_raw, model.article_steps)
+    model_ema.module.set_omni_teachers(model.omni_teacher_vectors, model.omni_teacher_articles)
     record = RunRecord(cfg, world_size) if is_main else None
 
     """4. train / evaluate loop"""
     max_epochs = cfg['opt']['epochs'] + cfg['opt']['warmup_epochs']
     # checkpoint metric: the official article grounding mAP. R@0.5 (top-k) penalises real steps HT-Step leaves
-    # unannotated (GT covers ~20% of a video), so it is only logged
-    best = {'mAP': (-1.0, 0), 'CIDEr': (-1.0, 0)}   # metric -> (best value, its epoch)
+    # unannotated (GT covers ~20% of a video), so it is only logged.
+    # Early stop: a metric counts as improved only if it beats its best by at least --min_delta
+    # (a gain of 0.01 means nothing); the run stops when none of the watched metrics improved for --patience epochs.
+    watched = ['mAP', 'ArtAcc_fused', 'OmniCos']
+    best = {name: (-1.0, 0) for name in watched}   # metric -> (best value, its epoch)
     ckpt_path = os.path.join(ckpt_folder, 'model_best.pth.tar')
+    last_improvement = 0
     for epoch in range(max_epochs):
         start = time.time()
         train_sampler.set_epoch(epoch)
@@ -112,29 +149,33 @@ def main(args):
         stop = False
         if is_main:
             m = valid_one_epoch(val_loader, model_ema.module, train_dataset.pool_text, device)
-            mark = ''
-            if m['CIDEr'] > best['CIDEr'][0]:
-                best['CIDEr'] = (m['CIDEr'], epoch)
-            if m['mAP'] > best['mAP'][0]:
-                best['mAP'] = (m['mAP'], epoch)
-                mark = '  <- best mAP, saved'
+            marks = []
+            for name in watched:
+                if m[name] < 0:
+                    continue   # metric not available (no article head / no omni head)
+                if m[name] >= best[name][0] + args.min_delta:
+                    best[name] = (m[name], epoch)
+                    last_improvement = epoch
+                    marks.append(name)
+            if 'mAP' in marks:
                 save_checkpoint({'epoch': epoch + 1, 'state_dict': model_ema.module.state_dict(), 'metrics': m},
                                 ckpt_folder, 'model_best.pth.tar')
-            art = f"  ArtAcc {m['ArtAcc']:.2f}" if m['ArtAcc'] >= 0 else ''
+            if 'ArtAcc_fused' in marks:
+                save_checkpoint({'epoch': epoch + 1, 'state_dict': model_ema.module.state_dict(), 'metrics': m},
+                                ckpt_folder, 'model_best_article.pth.tar')
+            mark = f"  <- better {', '.join(marks)}" if marks else ''
             print(f"epoch {epoch + 1:2d}/{max_epochs}  {time.time() - start:4.0f}s  loss {losses['final_loss']:.3f}"
-                  f" | R@0.3 {m['R@0.3']:.2f}  R@0.5 {m['R@0.5']:.2f}  R@0.7 {m['R@0.7']:.2f}  mIoU {m['mIoU']:.2f}  CIDEr {m['CIDEr']:.2f}  Acc {m['Acc']:.2f}{art}  mAP {m['mAP']:.2f}{mark}",
-                  flush=True)
+                  f" | {metrics_line(m)}{mark}", flush=True)
             record.add_epoch(epoch + 1, time.time() - start, losses, m,
                              {k: {'value': v, 'epoch': e + 1} for k, (v, e) in best.items()})
-            # early stop: neither the best mAP nor the best CIDEr has improved for `patience` epochs
-            stop = args.patience > 0 and epoch - max(e for _, e in best.values()) >= args.patience
+            stop = args.patience > 0 and epoch - last_improvement >= args.patience
         if world_size > 1:   # every process follows the decision of process 0
             flag = [stop]
             dist.broadcast_object_list(flag, src=0)
             stop = flag[0]
         if stop:
             if is_main:
-                print(f'Early stop: no new best mAP / CIDEr for {args.patience} epochs', flush=True)
+                print(f'Early stop: no metric improved by {args.min_delta} for {args.patience} epochs', flush=True)
             break
 
     if is_main:
@@ -148,6 +189,10 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description='Train on HT-Step; parameters are in libs/core/config.py. '
                                             'Several GPUs: torchrun --nproc_per_node=N train.py')
     p.add_argument('--eval', default='', help='only score this checkpoint, no training')
-    p.add_argument('--patience', type=int, default=3,
-                   help='stop when neither mAP nor CIDEr has improved for this many epochs (0 = never)')
+    p.add_argument('--output', default='', help='run name: checkpoints go to ckpt/<output> (default: config output_folder)')
+    p.add_argument('--set', nargs='+', action='extend', default=[], help='config overrides, e.g. model.article_head=True opt.epochs=8')
+    p.add_argument('--patience', type=int, default=2,
+                   help='stop when no watched metric (mAP, ArtAcc_fused, OmniCos) has improved for this many epochs (0 = never)')
+    p.add_argument('--min_delta', type=float, default=0.3,
+                   help='a metric counts as improved only if it beats its best by at least this much')
     main(p.parse_args())

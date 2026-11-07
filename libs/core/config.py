@@ -9,21 +9,22 @@ cfg = {
 
     'dataset': {
         # official HT-Step files (git clone https://github.com/facebookresearch/htstep data/htstep)
-        'json_file': './data/htstep/data/annotations.json',
-        'taxonomy_file': './data/htstep/data/taxonomy.csv',
+        'json_file': './datasets/annotations.json',
+        'taxonomy_file': './datasets/taxonomy.csv',
         # InternVideo2 text vectors (512-d) of the 4958 steps, "<activity>: <headline>" (tools/htstep_data.py steps)
-        'step_emb_file': './data/htstep/step_emb_iv2j.npz',
-        # OmniRetriever vectors (3584-d) of the steps, same layout; '' = no omni head
-        'omni_emb_file': '',
+        'step_emb_file': './datasets/step_emb_iv2j.npz',
+        # OmniRetriever encode_av vector (3584-d) of every GT segment: train/<id>.npz and val/<id>.npz
+        # (tools/fetch_htstep.py; HF htstep-omni-av = train, htstep-val-seen-feats omni_av/ = val_seen)
+        'omni_emb_folder': './datasets/omni_av_feats',
         # <video_id>.npz: InternVideo2 K400 f16 video k768 + BEATs audio a768, one row per second
-        'feat_folder': './data/htstep/k400_feats',
-        'video_key': 'k768',
+        'feat_folder': './datasets/k400_feats',
         'default_fps': 16,
         'max_seq_len': 256,      # every video is resampled to 256 steps
         'trunc_thresh': 0.5,
         'crop_ratio': [0.9, 1.0],
         'num_classes': 48,       # at most 48 GT segments per video (only 1 of the 18072 videos has more)
         'center_sample_radius': 0.0,   # > 0: event positives only within this many strides of a step centre
+        'omni_emb_dim': 3584
     },
 
     'model': {
@@ -43,7 +44,7 @@ cfg = {
         'embd_dim': 512,
         'embd_with_ln': True,
         'head_dim': 512,
-        'omni_head_dim': 3584,   # set to 0 by train.py when omni_emb_file is ''
+        'omni_head_dim': 3584,   # size of the OmniRetriever vectors; 0 = no omni head
         'regression_range': [[0, 4], [4, 8], [8, 16], [16, 32], [32, 64], [64, 10000]],
         'head_num_layers': 3,
         'head_kernel_size': 3,
@@ -57,12 +58,11 @@ cfg = {
             'loss_weight_iou': 1.0,
             'loss_weight_emb': 0.2,
             'loss_weight_omni_emb': 0.2,
+            'omni_bank_size': 4096,       # omni head: candidate negatives kept (mined: the weakest are dropped)
+            'omni_temperature': 0.05,     # omni head: softmax temperature of the distillation loss
             'loss_weight_span': 0.2,
             'loss_weight_article': 0.5,   # article_head only
             'article_detach': False,      # article_head only: True = no article gradient into the backbone
-            # event head target: 'binary' (1 inside a GT step) or 'iou' (IoU of the segment predicted from the point,
-            # quality focal loss)
-            'ev_target': 'binary',
             'cls_prior_prob': 0.01,
             'dropout': 0.0,
             'droppath': 0.1,

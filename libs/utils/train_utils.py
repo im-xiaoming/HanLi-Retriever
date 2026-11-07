@@ -181,21 +181,13 @@ def valid_one_epoch(
     pool_text,   # [4958] headline of every step, in pool order
     device,
 ):
-    """Score step detection, step classification and captioning on the validation split.
-
-    R@t   : share of GT steps matched by one of the top-k predictions (k = GT steps of the video) with IoU >= t,
-            t = 0.3 / 0.5 / 0.7; mIoU the mean of that best IoU
-    CIDEr : the usual word-overlap caption metric (headline of the predicted step); only scored on the GT steps
-            that a prediction matches with IoU >= 0.3
-    Acc   : share of those matched GT steps whose predicted step is the GT one
-    mAP   : official HT-Step article grounding mAP (tIoU 0.3-0.7), on the validation videos that have features
-    ArtAcc: share of videos whose predicted article is the right one (article head only, else -1)
-    """
     model.eval()
     best_ious, correct = [], []
     gts_txt, hyp = {}, {}
     preds, gt_all = [], []
     art_ok = []
+    omni_students, omni_teachers = [], []   # one (n, 3584) tensor per video with omni teacher vectors
+    article_scores, article_truth = [], []  # per video: {'head' | 'step' | 'omni': (A,) scores}, true article
     for video_list in val_loader:
         for x in video_list:
             x['feats'] = {k: v.to(device) for k, v in x['feats'].items()}
@@ -219,7 +211,15 @@ def valid_one_epoch(
             gt_all.append((x['video_id'], x['activity'], gts, x['gt_steps']))
             if r['article_pred'] >= 0:
                 art_ok.append(r['article_pred'] == x['article'])
+            if r.get('article_scores'):
+                article_scores.append(r['article_scores'])
+                article_truth.append(x['article'])
+            if r.get('omni_student') is not None:
+                omni_students.append(r['omni_student'])
+                omni_teachers.append(r['omni_teacher'])
 
+    omni_cos, omni_r1 = omni_student_teacher_scores(omni_students, omni_teachers)
+    article_acc = article_accuracies(article_scores, article_truth)
     best_ious = np.array(best_ious)
     return {'R@0.3': float(100 * np.mean(best_ious >= 0.3)),
             'R@0.5': float(100 * np.mean(best_ious >= 0.5)),
@@ -228,4 +228,61 @@ def valid_one_epoch(
             'CIDEr': cider(gts_txt, hyp) * 100 if hyp else 0.0,
             'Acc': float(100 * np.mean(correct)) if correct else 0.0,
             'mAP': article_grounding_map(preds, gt_all),
-            'ArtAcc': float(100 * np.mean(art_ok)) if art_ok else -1.0}
+            'ArtAcc': float(100 * np.mean(art_ok)) if art_ok else -1.0,
+            'OmniCos': omni_cos,
+            'OmniR@1': omni_r1,
+            # article accuracy of every article score, and of their fusion (-1 = not available)
+            'ArtAcc_step': article_acc.get('step', -1.0),
+            'ArtAcc_omni': article_acc.get('omni', -1.0),
+            'ArtAcc_fused': article_acc.get('fused', -1.0)}
+
+
+def article_accuracies(
+    scores,  # list, one dict per video: {'head' | 'step' | 'omni': (A,) score of every article}
+    truth,   # list, the true article of every video
+):
+    """Article accuracy (%) of every score, and of 'fused': the sum of the scores after a z-score per video
+    (each score minus its mean over the articles, divided by its standard deviation), so that scores of
+    different scales count the same."""
+    if not scores:
+        return {}
+    names = sorted(scores[0])
+    correct = {name: [] for name in names + ['fused']}
+    for video_scores, article in zip(scores, truth):
+        fused = 0.0
+        for name in names:
+            score = video_scores[name]
+            correct[name].append(int(score.argmax()) == article)
+            fused = fused + (score - score.mean()) / score.std().clamp(min=1e-6)
+        correct['fused'].append(int(fused.argmax()) == article)
+    return {name: float(100 * np.mean(ok)) for name, ok in correct.items()}
+
+
+def omni_student_teacher_scores(
+    students,  # list of (n, 3584) student vectors of the GT segments, one entry per video, L2-normalised
+    teachers,  # list of (n, 3584) teacher (OmniRetriever) vectors of the same segments, L2-normalised
+):
+    """Distance between the omni head (student) and OmniRetriever (teacher) on the validation segments.
+
+    OmniCos : mean cosine similarity between the student and the teacher of the same segment, x100
+              (100 = identical direction)
+    OmniR@1 : share of segments whose own teacher is the closest of all validation teachers to its student
+    Both are -1 without omni head or without teacher vectors.
+    """
+    if not students:
+        return -1.0, -1.0
+    students = torch.cat(students).float()   # (S, 3584)
+    teachers = torch.cat(teachers).float()   # (S, 3584)
+
+    own_similarity = (students * teachers).sum(dim=-1)   # (S,) cosine with its own teacher
+    omni_cos = float(100 * own_similarity.mean())
+
+    # retrieval: compare every student with every teacher, in chunks to keep the memory small
+    hits = 0
+    for start in range(0, len(students), 1024):
+        chunk = students[start:start + 1024]                      # (c, 3584)
+        closest = (chunk @ teachers.t()).argmax(dim=-1)           # (c,) index of the closest teacher
+        own = torch.arange(start, start + len(chunk))             # (c,) index of its own teacher
+        hits += int((closest == own).sum())
+    omni_r1 = float(100 * hits / len(students))
+    return omni_cos, omni_r1

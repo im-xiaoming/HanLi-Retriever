@@ -20,7 +20,7 @@ def register_generator(name):
 
 # kwargs = dict(cfg['dataset'], scale_factor=cfg['model']['scale_factor'],
 #                     regression_range=cfg['model']['regression_range'], backbone_arch=cfg['model']['backbone_arch'])
-def make_dataset(name, is_training: bool, split: Literal['train', 'val_seen'], **kwargs):
+def make_dataset(name, is_training, split, **kwargs):
    """
        Build a registered dataset by name
    """

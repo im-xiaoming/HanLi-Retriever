@@ -74,11 +74,25 @@ CIDEr of the captions (headlines) of the matched steps, Acc (matched steps given
 article grounding mAP, tIoU 0.3-0.7, same numbers as `data/htstep/evaluation/eval_article_grounding.py` on the
 videos that have features). The checkpoint with the best mAP goes to `ckpt/htstep/model_best.pth.tar` (R@0.5 is
 only logged: HT-Step leaves many real steps unannotated, and R@0.5 counts them as false detections). Training stops
-when neither mAP nor CIDEr has improved for `--patience` epochs
-(default 3). Other parameters are edited in `libs/core/config.py`.
+when none of mAP, ArtAcc_fused and OmniCos has improved by at least `--min_delta` (0.3) for `--patience` epochs
+(default 2). Other parameters are edited in `libs/core/config.py`, or overridden with
+`--set model.article_head=True opt.epochs=8`; `--output NAME` writes the checkpoints to `ckpt/NAME`.
 
-The omni head (an extra embedding loss against OmniRetriever step vectors, 3584-d) is off while
-`dataset.omni_emb_file` is `''`; set it to an npz laid out as `step_emb_iv2j.npz` (`ids`, `emb`) to turn it on.
+The omni head distils OmniRetriever: every point inside a GT segment learns the OmniRetriever `encode_av` vector of
+that segment (`datasets/omni_av_feats/train|val/<id>.npz`, one 3584-d row per segment). The loss is an InfoNCE whose
+negatives are the other segments of the batch plus a list of candidates (`libs/modeling/omni_bank.py`): every step
+adds the batch segments, and when the list is full the weakest candidates (least similar to any student) are
+dropped. Negatives of the same step as the anchor are masked. Validation reports OmniCos (mean cosine between the
+student and the teacher of every val segment) and OmniR@1 (own teacher is the nearest of all val teachers).
+`model.omni_head_dim=0` turns the head off.
+
+Article prediction is scored three ways on val_seen: ArtAcc (article head), ArtAcc_step (for every step its best
+match over the video, averaged over the article's steps), ArtAcc_omni (kNN of the omni student against the train
+segments' OmniRetriever vectors), and ArtAcc_fused (sum of the three after a z-score per video).
+
+`tools/fetch_htstep.py` downloads the k400 features (train and val_seen) and the omni vectors into `datasets/`;
+`tools/validate_htstep.py` checks them against the annotations before training; `tools/colab_train.sh` runs
+both on Colab, then trains.
 
 ## Feature pipeline (`tools/pipeline/`)
 

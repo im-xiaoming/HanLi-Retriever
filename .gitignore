@@ -20,3 +20,7 @@ ckpt/
 # third-party code cloned next to the repo
 InternVideo/
 OmniRetreiver/
+datasets/k400_feats
+datasets/omni_av_feats
+.vscode
+ckpt/*
