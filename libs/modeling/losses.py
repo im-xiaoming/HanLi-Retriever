@@ -155,7 +155,13 @@ def omni_loss(
     bank,        # OmniCandidateBank (omni_bank.py): mined candidate negatives, updated here
     temperature, # softmax temperature (0.05)
 ):
-    """Distillation of the OmniRetriever segment vectors (teacher) into the omni head (student)."""
+    """Distillation of the OmniRetriever segment vectors (teacher) into the omni head (student).
+
+    Returns two losses:
+        nce : InfoNCE, the student must pick its own teacher among the batch segments and the bank
+              (learns what tells segments apart, but ignores the part every teacher shares)
+        cos : 1 - cosine(student, teacher), pulls the student onto its teacher, shared part included
+    """
     dev = omni_em.device
     teacher_all = torch.stack([x['omni_seg'] for x in video_list]).to(dev)   # (B, 48, 3584)
     has_teacher = torch.stack([x['omni_ok'] for x in video_list]).to(dev)    # (B, 48)
@@ -166,7 +172,8 @@ def omni_loss(
     slot_of_point = gt_cls[pos].argmax(-1)                  # (N',) GT segment (slot) of every positive point
     point_has_teacher = has_teacher[video_of_point, slot_of_point]   # (N',)
     if not point_has_teacher.any():
-        return omni_em.sum() * 0.0   # no teacher in this batch: a zero loss that keeps the graph
+        zero = omni_em.sum() * 0.0   # no teacher in this batch: zero losses that keep the graph
+        return {'nce': zero, 'cos': zero}
 
     students = omni_em[pos][point_has_teacher]                                     # (N, 3584)
     anchor_video = video_of_point[point_has_teacher]                               # (N,)
@@ -181,10 +188,14 @@ def omni_loss(
     batch_keys = seg_keys[has_teacher]                                             # (M,)
 
     # 3. the loss, against the batch and the candidate bank as it was before this batch
-    loss = omni_distill_loss(students, teachers, anchor_steps, anchor_keys,
-                             batch_vectors, batch_steps, batch_keys,
-                             bank, temperature)
+    nce_loss = omni_distill_loss(students, teachers, anchor_steps, anchor_keys,
+                                 batch_vectors, batch_steps, batch_keys,
+                                 bank, temperature)
 
-    # 4. add the batch segments to the bank (mined when full)
+    # 4. the direct pull: cosine distance between every student and its own teacher
+    cosine = (students * teachers).sum(dim=-1)   # (N,)
+    cos_loss = (1.0 - cosine).mean()
+
+    # 5. add the batch segments to the bank (mined when full)
     bank.add(batch_vectors, batch_steps, batch_keys, students)
-    return loss
+    return {'nce': nce_loss, 'cos': cos_loss}

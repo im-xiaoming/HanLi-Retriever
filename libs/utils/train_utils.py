@@ -218,7 +218,8 @@ def valid_one_epoch(
                 omni_students.append(r['omni_student'])
                 omni_teachers.append(r['omni_teacher'])
 
-    omni_cos, omni_r1 = omni_student_teacher_scores(omni_students, omni_teachers)
+    omni_cos, omni_cos_c, omni_r1 = omni_student_teacher_scores(
+        omni_students, omni_teachers, getattr(model, 'omni_teacher_mean', None))
     article_acc = article_accuracies(article_scores, article_truth)
     best_ious = np.array(best_ious)
     return {'R@0.3': float(100 * np.mean(best_ious >= 0.3)),
@@ -230,6 +231,7 @@ def valid_one_epoch(
             'mAP': article_grounding_map(preds, gt_all),
             'ArtAcc': float(100 * np.mean(art_ok)) if art_ok else -1.0,
             'OmniCos': omni_cos,
+            'OmniCosC': omni_cos_c,
             'OmniR@1': omni_r1,
             # article accuracy of every article score, and of their fusion (-1 = not available)
             'ArtAcc_step': article_acc.get('step', -1.0),
@@ -259,23 +261,33 @@ def article_accuracies(
 
 
 def omni_student_teacher_scores(
-    students,  # list of (n, 3584) student vectors of the GT segments, one entry per video, L2-normalised
-    teachers,  # list of (n, 3584) teacher (OmniRetriever) vectors of the same segments, L2-normalised
+    students,      # list of (n, 3584) student vectors of the GT segments, one entry per video, L2-normalised
+    teachers,      # list of (n, 3584) teacher (OmniRetriever) vectors of the same segments, L2-normalised
+    teacher_mean,  # (3584,) mean of the train teacher vectors; None = no centred cosine
 ):
     """Distance between the omni head (student) and OmniRetriever (teacher) on the validation segments.
 
     OmniCos : mean cosine similarity between the student and the teacher of the same segment, x100
-              (100 = identical direction)
+              (100 = identical direction). Predicting the train mean for every segment already gives ~80.
+    OmniCosC: the same after subtracting the train teacher mean from both vectors: only what is specific to the
+              segment counts (0 = no better than the mean)
     OmniR@1 : share of segments whose own teacher is the closest of all validation teachers to its student
     Both are -1 without omni head or without teacher vectors.
     """
     if not students:
-        return -1.0, -1.0
+        return -1.0, -1.0, -1.0
     students = torch.cat(students).float()   # (S, 3584)
     teachers = torch.cat(teachers).float()   # (S, 3584)
 
     own_similarity = (students * teachers).sum(dim=-1)   # (S,) cosine with its own teacher
     omni_cos = float(100 * own_similarity.mean())
+
+    omni_cos_c = -1.0
+    if teacher_mean is not None:
+        mean = teacher_mean.float().cpu()
+        centred_students = torch.nn.functional.normalize(students - mean, dim=-1)
+        centred_teachers = torch.nn.functional.normalize(teachers - mean, dim=-1)
+        omni_cos_c = float(100 * (centred_students * centred_teachers).sum(dim=-1).mean())
 
     # retrieval: compare every student with every teacher, in chunks to keep the memory small
     hits = 0
@@ -285,4 +297,4 @@ def omni_student_teacher_scores(
         own = torch.arange(start, start + len(chunk))             # (c,) index of its own teacher
         hits += int((closest == own).sum())
     omni_r1 = float(100 * hits / len(students))
-    return omni_cos, omni_r1
+    return omni_cos, omni_cos_c, omni_r1

@@ -55,7 +55,7 @@ def apply_overrides(settings):
 def metrics_line(m):
     """One line with the validation metrics; the ones that are -1 (head not used) are left out."""
     parts = [f"R@0.5 {m['R@0.5']:.2f}", f"mIoU {m['mIoU']:.2f}", f"Acc {m['Acc']:.2f}", f"mAP {m['mAP']:.2f}"]
-    for name in ['ArtAcc', 'ArtAcc_step', 'ArtAcc_omni', 'ArtAcc_fused', 'OmniCos', 'OmniR@1']:
+    for name in ['ArtAcc', 'ArtAcc_step', 'ArtAcc_omni', 'ArtAcc_fused', 'OmniCos', 'OmniCosC', 'OmniR@1']:
         if m.get(name, -1) >= 0:
             parts.append(f"{name} {m[name]:.2f}")
     return '  '.join(parts)
@@ -129,6 +129,7 @@ def main(args):
     model_ema = ModelEma(model, cfg['train_cfg']['ema_decay'])
     model_ema.module.set_step_pool(model.pool_raw, model.article_steps)
     model_ema.module.omni_article_prototypes = model.omni_article_prototypes
+    model_ema.module.omni_teacher_mean = model.omni_teacher_mean
     record = RunRecord(cfg, world_size) if is_main else None
 
     """4. train / evaluate loop"""

@@ -63,6 +63,9 @@ cfg = {
             'loss_weight_omni_emb': 0.2,
             'omni_bank_size': 4096,       # omni head: candidate negatives kept (mined: the weakest are dropped)
             'omni_temperature': 0.05,     # omni head: softmax temperature of the distillation loss
+            # omni head: weight of 1 - cos(student, teacher). InfoNCE alone ignores the part every teacher shares
+            # (the train mean already has cos 0.80 with a val teacher), so the student stays far from its teacher
+            'loss_weight_omni_cos': 1.0,
             'loss_weight_span': 0.2,
             'loss_weight_article': 0.5,   # article_head only
             'article_detach': False,      # article_head only: True = no article gradient into the backbone

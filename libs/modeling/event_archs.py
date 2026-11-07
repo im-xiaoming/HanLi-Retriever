@@ -77,6 +77,7 @@ class EventCaptionTransformer(nn.Module):
             self.omni_bank = OmniCandidateBank(train_cfg.get('omni_bank_size', 4096), omni_head_dim)
         # OmniRetriever prototype of every article, for the omni article score (set_omni_teachers)
         self.omni_article_prototypes = None
+        self.omni_teacher_mean = None
 
     def set_step_pool(
         self,
@@ -109,6 +110,8 @@ class EventCaptionTransformer(nn.Module):
         summed = torch.zeros(n_articles, vectors.shape[1], device=vectors.device)
         summed.index_add_(0, articles, vectors.float())
         self.omni_article_prototypes = F.normalize(summed, dim=-1)   # (A, 3584)
+        # mean of all the train teacher vectors: the part every segment shares (OmniCosC removes it)
+        self.omni_teacher_mean = vectors.float().mean(dim=0)          # (3584,)
 
     @torch.no_grad()
     def article_scores(
@@ -266,9 +269,12 @@ class EventCaptionTransformer(nn.Module):
         
         # <<<<<<<<<<<<<<<< Omni >>>>>>>>>>>>>>
         omni_emb_loss = torch.zeros((), device=dev)
+        omni_cos_loss = torch.zeros((), device=dev)
         if self.use_omni:
-            omni_emb_loss = omni_loss(video_list, pos, gt_cls, cap_pool, omni_em,
-                                      self.omni_bank, self.train_cfg.get('omni_temperature', 0.05))
+            omni_losses = omni_loss(video_list, pos, gt_cls, cap_pool, omni_em,
+                                    self.omni_bank, self.train_cfg.get('omni_temperature', 0.05))
+            omni_emb_loss = omni_losses['nce']
+            omni_cos_loss = omni_losses['cos']
 
         # =========================================== Span Loss =========================================
         qs, gs = [], []
@@ -292,11 +298,12 @@ class EventCaptionTransformer(nn.Module):
 
         total = (ev_loss + w['loss_weight_reg'] * rg_loss + w['loss_weight_iou'] * iou_loss
                  + w['loss_weight_emb'] * emb_loss + w['loss_weight_omni_emb'] * omni_emb_loss
+                 + w.get('loss_weight_omni_cos', 0.0) * omni_cos_loss
                  + w['loss_weight_span'] * span_loss
                  + w.get('loss_weight_article', 0.0) * art_loss)
 
         return {'ev_loss': ev_loss, 'reg_loss': rg_loss, 'iou_loss': iou_loss, 'emb_loss': emb_loss,
-                'omni_emb_loss': omni_emb_loss, 'span_loss': span_loss,
+                'omni_emb_loss': omni_emb_loss, 'omni_cos_loss': omni_cos_loss, 'span_loss': span_loss,
                 'art_loss': art_loss, 'final_loss': total}
 
     @torch.no_grad()
