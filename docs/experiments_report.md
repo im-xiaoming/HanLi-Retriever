@@ -174,3 +174,193 @@ Con số 31.03 của head tách gradient có thể là do gradient clipping: nor
 **Chưa chạy:**
 - OV-AVEL `audio_text`: đã có code, mới chạy smoke test.
 - Kiểm tra lại clip_grad / lr. Kết quả của a_ahd gợi ý nên thử điều này.
+
+---
+
+# Thí nghiệm HT-Step, 07/11/2026 – 08/11/2026
+
+- Nhánh: `htstep-omni-distill`. Commit cuối: `a53480a`.
+- Log: `logs/<tên>.log` cho các lần chạy trên PC. Log Colab nằm trên VM nên đã mất; các dòng theo epoch được chép lại vào report này.
+- Checkpoint: `ckpt/<tên>/model_best.pth.tar` (mAP tốt nhất) và `ckpt/<tên>/model_best_article.pth.tar` (ArtAcc tốt nhất).
+- Máy:
+  - PC RTX 3060: 160–245 s mỗi epoch.
+  - Colab T4 miễn phí: 170–360 s mỗi epoch. Tài khoản có 0 CU nên A100 và L4 bị từ chối.
+
+## 1. Dữ liệu
+
+| | Train | val_seen |
+|---|---|---|
+| Video có feature k400 | 5826 (5816 dùng được) | 510 |
+| Video có vector omni (OmniRetriever `encode_av`, 1 vector 3584 chiều mỗi đoạn GT) | 5465 | 179 |
+
+Tổng số video có feature k400 là 6336.
+
+Nguồn dữ liệu:
+- `tools/fetch_htstep.py` tải từ HF:
+  - k400 lấy từ `htstep-feats-k400` và `htstep-val-seen-feats`. Các tar `zz_fix_*` được giải nén sau cùng để ghi đè lên bản cũ.
+  - Omni lấy vào `datasets/omni_av_feats/train` và `datasets/omni_av_feats/val`.
+- Vector omni của 179 video val đã được chuyển sang `htstep-val-seen-feats/omni_av/`. Repo `htstep-omni-av` giờ chỉ còn dữ liệu train.
+
+Kiểm tra bằng `tools/validate_htstep.py`:
+- Không có lỗi chặn.
+- `seg_idx` và `step_id` của omni khớp với annotation.
+- 20 video có số dòng feature lệch so với `duration`. Dataset bỏ qua những video có nhiều dòng hơn `duration + max(5, 5%)`, vì đó có thể là một bản video khác.
+
+## 2. Thiết lập chung
+
+**Huấn luyện:**
+- Batch 32, fp32.
+- lr 3e-4, `clip_proj_lr` 3e-3, weight decay 1e-4.
+- 12 epoch, tính cả 2 epoch warmup.
+- EMA 0.999.
+- `max_seq_len` 256.
+
+**Dừng sớm:**
+- Theo dõi mAP, ArtAcc và OmniCos.
+- Một chỉ số được tính là "tốt hơn" khi tăng ít nhất `--min_delta 0.3`.
+- Dừng khi 2 epoch liên tiếp không có chỉ số nào tốt hơn (`--patience 2`).
+
+**Omni head:**
+- Mỗi điểm nằm trong một đoạn GT học vector teacher của chính đoạn đó.
+- Loss InfoNCE (trọng số 0.2, nhiệt độ 0.05). Negative gồm:
+  - các đoạn khác trong batch;
+  - một danh sách ứng viên 4096 phần tử (`OmniCandidateBank`). Mỗi step, các đoạn của batch được thêm vào. Khi danh sách đầy, mining sẽ bỏ các ứng viên yếu nhất, tức là ít giống student nhất.
+- Negative cùng step với anchor bị mask.
+
+**Thang đo:**
+
+| Chỉ số | Ý nghĩa |
+|---|---|
+| mAP | mAP article grounding chính thức trên 510 video, article cho sẵn |
+| ArtAcc | tỉ lệ đoán đúng article (trên 617 article) bằng ArticleHead |
+| OmniCos | cosine trung bình giữa student và teacher trên 1080 đoạn GT val, start–end cho sẵn |
+| OmniCosC | cosine sau khi trừ vector trung bình của teacher train |
+| OmniR@1 | tỉ lệ đoạn mà teacher của chính nó gần student nhất, so với mọi teacher val |
+
+## 3. Config từng lần chạy
+
+**Config chung:** `train.py --output <tên> --set ...`. Các khoá ở bảng dưới được ghi đè lên config tại commit đã nêu. Các khoá còn lại giữ mặc định cũ:
+- `article_cond` False, `article_head` False, `article_learned` 0, `omni_head_dim` 3584;
+- `loss_weight_omni_cos` 1.0 (từ commit `aed4828`);
+- `omni_span_head` False, `pool_queries` 4, `omni_span_hidden` 2048.
+
+Các khoá có đánh dấu † đã bị xoá khỏi code vì không có ích.
+
+| Lần chạy | Máy | Commit | Override (`--set`) | Ghi chú |
+|---|---|---|---|---|
+| pc_ah_noomni | PC | 65a72a6 | `model.article_head=True model.omni_head_dim=0` | không có omni |
+| t4_ah_omni | T4 | 65a72a6 | `model.article_head=True` | omni chỉ có InfoNCE, chưa có loss cos; dừng ở ep 6 |
+| pc_ah_learn_omni | PC | 5476780 | `model.article_head=True model.article_learned=617` | dừng ở ep 1, thay bằng run kế tiếp |
+| pc_ah_learn_cos | PC | aed4828 | `model.article_head=True model.article_learned=617` | loss cos trọng số 1.0 |
+| t4_ah_cos | T4 | aed4828 | `model.article_head=True` | loss cos 1.0, không có `article_learned`; dừng ở ep 5 |
+| pc_v3 | PC | b00e953 | `model.article_head=True model.article_learned=617 model.article_all_levels=True† model.train_cfg.article_label_smoothing=0.1† model.train_cfg.loss_weight_omni_cos=2.0` | |
+| t4_v3a | T4 | b00e953 | `model.article_head=True model.article_learned=617 model.train_cfg.loss_weight_omni_cos=2.0` | |
+| pc_crop03 | PC | 85efcca | như t4_v3a + `model.train_cfg.article_crop_min=0.3†` | dừng ở ep 4 vì không tăng |
+| t4_half | T4 | 85efcca | như t4_v3a + `dataset.train_fraction=0.5` | learning curve |
+| pc_v4 | PC | 0a4e317 | như t4_v3a + `model.article_cond=True model.omni_span_head=True model.article_attention_pool=True†` | |
+| t4_v4_noattn | T4 | 0a4e317 | như pc_v4 nhưng không có `article_attention_pool` | Colab bị thu hồi ở ep 9, mất checkpoint |
+| pc_v5 | PC | 7d2dcfb | như pc_v4 + `model.pool_queries=8 model.omni_span_hidden=4096` | |
+| **pc_v6** | PC | 7d2dcfb | như pc_v5 nhưng không có `article_attention_pool` | **= config mặc định từ `a53480a`** |
+
+Config đầy đủ của pc_v6, cũng là mặc định hiện tại:
+
+```
+model.article_cond = True              model.article_head = True          model.article_learned = 617
+model.omni_head_dim = 3584             model.omni_span_head = True        model.pool_queries = 8
+model.omni_span_hidden = 4096
+model.train_cfg.loss_weight_omni_emb = 0.2      model.train_cfg.loss_weight_omni_cos = 2.0
+model.train_cfg.loss_weight_omni_span_nce = 0.2 model.train_cfg.loss_weight_omni_span_cos = 2.0
+model.train_cfg.omni_bank_size = 4096  model.train_cfg.omni_temperature = 0.05
+model.train_cfg.loss_weight_article = 0.5
+model.test_cfg.article_soft = False (True khi article tự đoán)   model.test_cfg.article_soft_weight = 0.5
+```
+
+## 4. Kết quả
+
+Cột mAP là mAP lớn nhất trong log (epoch trong ngoặc). Các cột ArtAcc, OmniCos, OmniCosC và OmniR@1 là giá trị lớn nhất trong cả lần chạy. Dấu – nghĩa là chưa có chỉ số đó.
+
+| Lần chạy | Epoch đã chạy | mAP | Acc | ArtAcc | OmniCos | OmniCosC | OmniR@1 |
+|---|---|---|---|---|---|---|---|
+| pc_ah_noomni | 12 | 25.02 (10) | 52.6 | 56.27 | – | – | – |
+| t4_ah_omni | 6 | 24.84 (6) | 52.6 | 52.94 | 40.4 | – | 43.7 |
+| pc_ah_learn_cos | 12 | 25.57 (9) | 56.5 | 58.82 | 81.3 | 65.6 | 49.5 |
+| t4_ah_cos | 5 | 24.18 (5) | 51.4 | 48.24 | 81.4 | 64.0 | 38.6 |
+| pc_v3 | 12 | 25.47 (10) | 57.5 | 58.43 | 85.8 | 68.3 | 49.1 |
+| t4_v3a | 12 | 25.40 (9) | 54.4 | 59.41 | 85.6 | 68.1 | 48.9 |
+| pc_crop03 | 4 | 23.12 (4) | 48.1 | 49.61 | 85.5 | 64.1 | 33.2 |
+| t4_half | 12 | 23.55 (8) | 49.6 | 50.00 | 85.1 | 65.3 | 40.1 |
+| pc_v4 | 10 | 29.25 (9) | 66.6 | 59.22 | 86.4 | 72.5 | 61.2 |
+| t4_v4_noattn | 9 | 30.49 (9) | 65.9 | 60.59 | 86.3 | 72.5 | 60.4 |
+| pc_v5 | 11 | 30.10 (10) | 67.7 | 59.22 | 86.5 | 72.7 | 60.7 |
+| **pc_v6** | 11 | **30.50** (9) | 66.4 | **61.57** | 86.5 | **72.9** | **62.1** |
+
+**mAP khi article do model tự đoán** (`test_cfg.pred_article=True`):
+
+| Checkpoint | Cách chọn bước | mAP |
+|---|---|---|
+| pc_v3 | top-1 cứng | 16.09 |
+| pc_v3 | mềm, trọng số 2.0 / 1.0 / **0.5** | 17.39 / 17.63 / **18.14** |
+| pc_v3 | mềm, p(article) lấy từ fused z-score | 17.89–18.21 (không đáng kể, đã bỏ) |
+| pc_v4 | top-1 cứng / mềm | 18.41 / 18.43 |
+| pc_v4 | top-3 article cho artc + mềm | 16.83 |
+| **pc_v6** | mềm, trọng số 0.5 | **21.23** |
+
+Chọn mềm (`article_soft`) nghĩa là mọi bước đều được xét, với điểm `log p(bước | đoạn) + w · log p(article của bước | video)`. Cách này không bắt buộc phải đoán đúng article top-1.
+
+## 5. Các phép đo phụ
+
+**Teacher omni:**
+- Cosine trung bình giữa hai teacher train bất kỳ là 0.637.
+- Nếu đoán một vector hằng là trung bình teacher train, OmniCos đạt **79.7**. Mốc OmniCos > 80 vì vậy gần như có sẵn, nên cần xem thêm OmniCosC.
+- Oracle dùng prototype của bước: 88.5. Oracle dùng prototype của article: 85.6.
+
+**Đoán article bằng teacher omni** (179 video val, dùng vector teacher của các đoạn GT):
+
+| Cách | ArtAcc |
+|---|---|
+| Max-kNN theo đoạn | 45.8% |
+| Trung bình video so với prototype article | 67.0% |
+
+**Feature thô** (mean+max của k768 và a768, không qua backbone): ArtAcc tốt nhất 41.8% với linear, 41.4% với MLP. Kết quả này thấp hơn head trên backbone (~56%), nên backbone có giúp ích.
+
+**Phân tích lỗi article** (checkpoint pc_ah_noomni):
+
+| | Kết quả |
+|---|---|
+| Đúng article | 55.9 |
+| Đúng món | 59.0 |
+| Top-5 | 80.8 |
+
+Khoảng 93% lỗi là đoán sang món khác hẳn, không phải nhầm biến thể của cùng món. Trên pc_ah_learn_cos, nối điểm head với điểm omni được 59.6, so với 58.6 của head một mình.
+
+**Learning curve:**
+- t4_half (50% dữ liệu train) chững lại ở ArtAcc ~50%.
+- t4_v3a (100% dữ liệu, cùng config) đạt 59.4%.
+- Vậy mỗi lần gấp đôi dữ liệu thì ArtAcc tăng khoảng 9 điểm.
+
+## 6. Kết luận
+
+**Những thay đổi có ích, đã giữ lại:**
+
+| Thay đổi | Tác dụng |
+|---|---|
+| Omni distill theo đoạn (loss InfoNCE + bank) | khoảng +0.5–0.7 mAP và +3 Acc so với không có omni |
+| Loss `1 − cos`, trọng số 2.0 | OmniCos lên ~86; với InfoNCE riêng chỉ đạt ~40 |
+| `article_learned` | +5–7 ArtAcc ở các epoch đầu |
+| artc | mAP khi article cho sẵn tăng từ ~25.5 lên ~30 |
+| Omni span head (attention pooling cho đoạn cho sẵn) | OmniCosC từ 68 lên 72.9, OmniR@1 từ 49 lên 62 |
+| Tăng capacity span head (8 query, hidden 4096) | khoảng +0.5–1 mAP |
+| Chọn bước mềm khi article tự đoán | +2 mAP |
+
+**Những thay đổi không có ích, đã xoá:**
+- Pool qua mọi tầng pyramid cho article.
+- Label smoothing.
+- Cắt cửa sổ ngẫu nhiên cho article.
+- Attention pooling cho article head: không có nó lại ngang hoặc tốt hơn.
+- Điểm article tính từ step và omni, cùng cách ghép chúng.
+
+**Cảnh báo về rò rỉ:** khi bật artc với article cho sẵn, không được tính điểm article từ vector step hoặc omni. Những vector này đã chứa text của article đúng, nên ArtAcc_step từng bị đẩy lên 70% ngay ở epoch 1.
+
+**Việc tiếp theo:**
+- ArtAcc đang bị giới hạn bởi dữ liệu. Mới có 5826 trên 17472 video train có feature k400. Nếu learning curve giữ đúng xu hướng, đủ dữ liệu có thể đưa ArtAcc lên khoảng **72–74%**.
+- Để làm việc này cần trích feature cho khoảng 11.6k video, tức là cần A100 hoặc compute unit.
