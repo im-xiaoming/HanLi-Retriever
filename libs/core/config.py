@@ -91,7 +91,7 @@ cfg = {
             # article_head only: True = every step competes, score + article_soft_weight * log p(its article | video)
             # (no hard choice of one article; overrides 'article' and 'pred_article' for the step choice)
             'article_soft': False,
-            'article_soft_weight': 1.0,
+            'article_soft_weight': 0.5,   # 0.5: mAP 18.14 vs 17.63 at 1.0 and 16.09 for the hard top-1 (pc_v3)
         },
     },
 
