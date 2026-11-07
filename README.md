@@ -74,7 +74,7 @@ CIDEr of the captions (headlines) of the matched steps, Acc (matched steps given
 article grounding mAP, tIoU 0.3-0.7, same numbers as `data/htstep/evaluation/eval_article_grounding.py` on the
 videos that have features). The checkpoint with the best mAP goes to `ckpt/htstep/model_best.pth.tar` (R@0.5 is
 only logged: HT-Step leaves many real steps unannotated, and R@0.5 counts them as false detections). Training stops
-when none of mAP, ArtAcc_fused and OmniCos has improved by at least `--min_delta` (0.3) for `--patience` epochs
+when none of mAP, ArtAcc and OmniCos has improved by at least `--min_delta` (0.3) for `--patience` epochs
 (default 2). Other parameters are edited in `libs/core/config.py`, or overridden with
 `--set model.article_head=True opt.epochs=8`; `--output NAME` writes the checkpoints to `ckpt/NAME`.
 
@@ -86,9 +86,14 @@ dropped. Negatives of the same step as the anchor are masked. Validation reports
 student and the teacher of every val segment) and OmniR@1 (own teacher is the nearest of all val teachers).
 `model.omni_head_dim=0` turns the head off.
 
-Article prediction is scored three ways on val_seen: ArtAcc (article head), ArtAcc_step (for every step its best
-match over the video, averaged over the article's steps), ArtAcc_omni (event-weighted mean of the omni student vs the
-article prototypes, the mean OmniRetriever vector of each article's train segments), and ArtAcc_fused (sum of the three after a z-score per video).
+With `model.omni_span_head=True`, a learned head compresses a GT segment (start and end given) into its omni vector:
+attention pooling of the level-0 features (learned queries) and an MLP, trained with the same InfoNCE + cosine
+losses; OmniCos is then measured with it. OmniCosC is the cosine after removing the train teacher mean.
+
+Article prediction (`model.article_head=True`): ArtAcc on val_seen. `model.article_learned=617` adds a learned
+vector per article to its text vector. With `test_cfg.pred_article=True`, `test_cfg.article_soft=True` lets every
+step compete with `log p(step | segment) + article_soft_weight * log p(its article | video)` instead of a hard
+top-1 article.
 
 `tools/fetch_htstep.py` downloads the k400 features (train and val_seen) and the omni vectors into `datasets/`;
 `tools/validate_htstep.py` checks them against the annotations before training; `tools/colab_train.sh` runs

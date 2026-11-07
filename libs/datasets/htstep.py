@@ -150,14 +150,12 @@ class HTStepDataset(Dataset):
             }, )
         return dict_db
 
-    def omni_teacher_bank(self):
-        """Every GT segment of this split that has an OmniRetriever vector, for the omni kNN article score.
-
-        Returns
-            vectors  (S, 3584) float16, L2-normalised
-            articles (S,) int64, the article of the video of every segment
-        """
-        vectors, articles = [], []
+    def omni_teacher_mean(self):
+        """Mean of the OmniRetriever vectors of every GT segment of this split, (3584,) float32: the part every
+        segment shares. The OmniCosC metric subtracts it (the train mean alone already has cos ~0.80 with a val
+        teacher). Zeros if the split has no omni vectors."""
+        total = np.zeros((self.omni_emb_dim,), dtype=np.float64)
+        count = 0
         for video_item in self.data_list:
             omni_vectors, omni_ok = load_omni_segments(
                 os.path.join(self.omni_folder, video_item['id'] + '.npz'),
@@ -167,12 +165,9 @@ class HTStepDataset(Dataset):
                 self.num_classes,
                 self.omni_emb_dim,
             )
-            for slot in np.nonzero(omni_ok)[0]:
-                vectors.append(omni_vectors[slot].astype(np.float16))
-                articles.append(video_item['article'])
-        if not vectors:
-            return np.zeros((0, self.omni_emb_dim), dtype=np.float16), np.zeros((0,), dtype=np.int64)
-        return np.stack(vectors), np.array(articles, dtype=np.int64)
+            total += omni_vectors[omni_ok].sum(axis=0)
+            count += int(omni_ok.sum())
+        return (total / max(count, 1)).astype(np.float32)
 
     def __len__(self):
         return len(self.data_list)

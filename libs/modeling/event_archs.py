@@ -42,7 +42,6 @@ class EventCaptionTransformer(nn.Module):
         article_cond=False,  # condition the features on the article's step texts (ActionFormer-T)
         article_head=False,  # predict the article from the video; test_cfg['pred_article'] uses it at inference
         article_learned=0,   # article_head only: > 0 = number of articles, each gets a learned vector too
-        article_all_levels=False,  # article_head only: pool every pyramid level (else only level 0)
         article_attention_pool=False,  # article_head only: learned attention pooling instead of mean + max
         omni_span_head=False,  # omni: a learned head compresses a (start, end) segment into one omni vector
         pool_queries=4,        # learned queries of the attention poolings (omni span head, article head)
@@ -77,7 +76,6 @@ class EventCaptionTransformer(nn.Module):
         if article_head:
             self.article_head = ArticleHead(D, head_dim, clip_dim, article_learned, article_attention_pool,
                                             pool_queries)
-        self.article_all_levels = article_all_levels
 
         # omni head: every point inside a GT segment learns the OmniRetriever vector of that segment (teacher),
         # against the other segments of the batch and a mined list of candidates (see omni_bank.py)
@@ -90,8 +88,7 @@ class EventCaptionTransformer(nn.Module):
             self.omni_span = OmniSpanHead(D, omni_head_dim, pool_queries, omni_span_hidden)
         if self.use_omni:
             self.omni_bank = OmniCandidateBank(train_cfg.get('omni_bank_size', 4096), omni_head_dim)
-        # OmniRetriever prototype of every article, for the omni article score (set_omni_teachers)
-        self.omni_article_prototypes = None
+        # mean of the train teacher vectors (the part every segment shares), for the OmniCosC metric; set by train.py
         self.omni_teacher_mean = None
 
     def set_step_pool(
@@ -113,85 +110,6 @@ class EventCaptionTransformer(nn.Module):
             self.article_of_step = torch.zeros(len(pool_raw), dtype=torch.long, device=pool_raw.device)
             for article, steps in enumerate(article_steps):
                 self.article_of_step[torch.as_tensor(steps, device=pool_raw.device)] = article
-
-    def set_omni_teachers(
-        self,
-        vectors,   # (S, 3584) OmniRetriever vector of every train GT segment, L2-normalised
-        articles,  # (S,) article of every one of these segments
-    ):
-        """Prototype of every article for the omni article score: the mean of the OmniRetriever vectors of
-        its train segments, L2-normalised (A, 3584). An article without train segment keeps a zero prototype."""
-        n_articles = len(self.article_steps)
-        summed = torch.zeros(n_articles, vectors.shape[1], device=vectors.device)
-        summed.index_add_(0, articles, vectors.float())
-        self.omni_article_prototypes = F.normalize(summed, dim=-1)   # (A, 3584)
-        # mean of all the train teacher vectors: the part every segment shares (OmniCosC removes it)
-        self.omni_teacher_mean = vectors.float().mean(dim=0)          # (3584,)
-
-    @torch.no_grad()
-    def article_scores(
-        self,
-        em_one,       # (P, D) step vectors of one video (embedding head), L2-normalised
-        omni_one,     # (P, 3584) omni student vectors of one video, L2-normalised; None = no omni head
-        valid_one,    # (P,) bool, real points (not padding)
-        head_logits,  # (A,) logits of the article head; None = no article head
-        event_prob,   # (P,) probability that a step happens at every point (weights the omni mean)
-    ):
-        """Three scores of every article for one video, (A,) each, None when not available.
-
-        head : the article head (pooled video features vs the article texts)
-        step : evidence of the steps. For every step, its best match over the points of the video
-               (cosine between the point vector and the projected step text); the score of an article is
-               the mean of this best match over its steps.
-        omni : OmniRetriever prototypes. The video vector is the mean of the omni student vectors over the
-               points, weighted by their event probability (the points inside steps count most); the score of an
-               article is the cosine between this video vector and the article prototype (set_omni_teachers).
-               With the teacher vectors of the GT segments in place of the student, this reaches 67% on val_seen.
-        """
-        n_articles = len(self.article_steps)
-        scores = {'head': head_logits, 'step': None, 'omni': None}
-
-        # step evidence
-        steps_text = self.embed_head.embed_captions(self.pool_raw)          # (4958, D)
-        point_vs_step = em_one[valid_one] @ steps_text.t()                  # (P', 4958)
-        best_per_step = point_vs_step.max(dim=0).values                     # (4958,)
-        step_sum = torch.zeros(n_articles, device=em_one.device).index_add_(0, self.article_of_step, best_per_step)
-        step_count = torch.zeros(n_articles, device=em_one.device).index_add_(
-            0, self.article_of_step, torch.ones_like(best_per_step))
-        scores['step'] = step_sum / step_count                              # (A,) mean over the article's steps
-
-        # omni prototypes
-        if omni_one is not None and self.omni_article_prototypes is not None:
-            weights = event_prob[valid_one].float()                          # (P',)
-            students = omni_one[valid_one].float()                           # (P', 3584)
-            video_vector = (weights[:, None] * students).sum(dim=0) / weights.sum().clamp(min=1e-6)
-            video_vector = F.normalize(video_vector, dim=-1)                 # (3584,)
-            scores['omni'] = self.omni_article_prototypes @ video_vector     # (A,)
-        return scores
-
-    def random_window_masks(
-        self,
-        masks,     # list of (B, 1, T_l) bool, one per pyramid level, True = real step
-        crop_min,  # shortest window, as a fraction of the real length of the video (e.g. 0.3)
-    ):
-        """Augmentation for the article head: keep one random window of every video, the same stretch of time at
-        every level. A video gives a different view every epoch, so the head cannot learn the train videos by heart
-        (with ~9 videos per article it reaches a train loss of 0.05 without it)."""
-        real_length = masks[0].squeeze(1).sum(-1).float()                    # (B,) real level-0 steps
-        batch = len(real_length)
-        device = real_length.device
-        fraction = crop_min + (1.0 - crop_min) * torch.rand(batch, device=device)   # (B,) window length
-        window = (fraction * real_length).clamp(min=1.0)                     # (B,) in level-0 steps
-        start = torch.rand(batch, device=device) * (real_length - window)    # (B,)
-        end = start + window
-
-        cropped = []
-        for level, m in enumerate(masks):
-            stride = 2 ** level                                              # level l: one step = 2^l level-0 steps
-            t = torch.arange(m.shape[-1], device=device).float() * stride   # (T_l,) time of every step, level-0 units
-            inside = (t[None, :] >= start[:, None] - stride) & (t[None, :] < end[:, None])   # (B, T_l)
-            cropped.append(m & inside[:, None, :])
-        return cropped
 
     @property
     def device(self):
@@ -216,17 +134,8 @@ class EventCaptionTransformer(nn.Module):
         art_logits = None
         if self.article_head is not None:
             # article_detach: the head reads the features but sends no gradient back into the backbone
-            # article_all_levels: the head pools every pyramid level, else only level 0
-            n_levels = len(feats) if self.article_all_levels else 1
-            head_feats = list(feats[:n_levels])
-            head_masks = list(msk[:n_levels])
-            if self.train_cfg.get('article_detach'):
-                head_feats = [f.detach() for f in head_feats]
-            # article_crop_min < 1: during training the article head only sees a random stretch of every video
-            crop_min = self.train_cfg.get('article_crop_min', 1.0)
-            if self.training and crop_min < 1.0:
-                head_masks = self.random_window_masks(head_masks, crop_min)
-            art_logits = self.article_head(head_feats, head_masks, self.article_raw)  # (B, A)
+            f0 = feats[0].detach() if self.train_cfg.get('article_detach') else feats[0]
+            art_logits = self.article_head(f0, msk[0], self.article_raw)  # (B, A)
             
         cands = [x['cand'].to(self.device) for x in video_list]
         if not self.training and self.test_cfg.get('pred_article') and art_logits is not None:
@@ -266,8 +175,7 @@ class EventCaptionTransformer(nn.Module):
         fpn_masks = torch.cat([m.squeeze(1) for m in msk], dim=1)        # (B, P)
         if self.training:
             return self.losses(video_list, fpn_masks, ev, bd, qu, em, omni_em, raw0, len0, art_logits, feats[0])
-        return self.inference(video_list, fpn_masks, ev, bd, qu, raw0, len0, cands, art_logits, omni_em, em,
-                              feats[0])
+        return self.inference(video_list, fpn_masks, ev, bd, qu, raw0, len0, cands, art_logits, omni_em, feats[0])
 
     def losses(
         self,
@@ -349,8 +257,7 @@ class EventCaptionTransformer(nn.Module):
         # 6. article head: the video must pick its own article among all of them
         art_loss = torch.zeros((), device=dev)
         if art_logits is not None:
-            art_loss = F.cross_entropy(art_logits, torch.as_tensor([x['article'] for x in video_list], device=dev),
-                                       label_smoothing=w.get('article_label_smoothing', 0.0))
+            art_loss = F.cross_entropy(art_logits, torch.as_tensor([x['article'] for x in video_list], device=dev))
 
 
         total = (ev_loss + w['loss_weight_reg'] * rg_loss + w['loss_weight_iou'] * iou_loss
@@ -429,7 +336,6 @@ class EventCaptionTransformer(nn.Module):
         cands,       # [B] pool rows of every video's article steps (given or predicted)
         art_logits,  # (B, A) article head logits; None = no article head
         omni_em=None,  # (B, P, 3584) student vectors of the omni head; None = no omni head
-        em=None,       # (B, P, D) step vectors of the embedding head (for the article scores)
         feat0=None,    # (B, D, T) level-0 pyramid features (for the omni span head)
     ):
         """Score of a segment = event score times IoU-quality score. Returns one dict per video:
@@ -489,29 +395,9 @@ class EventCaptionTransformer(nn.Module):
             if omni_em is not None:
                 omni_student, omni_teacher = self.omni_eval(omni_em[b], int(len0[b]), v, feat0[b])
 
-            # scores of every article (head, step evidence, omni kNN), compared in valid_one_epoch
-            article_scores = {}
-            if em is not None and self.article_steps is not None:
-                article_scores = self.article_scores(
-                    em[b],
-                    omni_em[b] if omni_em is not None else None,
-                    valid[b],
-                    art_logits[b] if art_logits is not None else None,
-                    ev[b].sigmoid(),
-                )
-                # with article conditioning on the GIVEN article, the step and omni vectors already carry the
-                # true article's step texts: their article scores would see the answer, so they are dropped
-                # (the head reads the features before the conditioning and stays fair)
-                if self.article_cond is not None and not t.get('pred_article'):
-                    article_scores['step'] = None
-                    article_scores['omni'] = None
-                article_scores = {name: score.float().cpu() for name, score in article_scores.items()
-                                  if score is not None}
-
             out.append({'video_id': v['video_id'], 'segments': segs, 'scores': scores,
                         'labels': cand[j].cpu(), 'label_probs': lp.exp().cpu(),
                         'article_pred': int(art_logits[b].argmax()) if art_logits is not None else -1,
-                        'article_scores': article_scores,
                         'omni_student': omni_student, 'omni_teacher': omni_teacher,
                         'gt_segments': v['segments_sec'], 'gt_text': v['cap_text']})
         return out

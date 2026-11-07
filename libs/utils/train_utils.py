@@ -187,7 +187,6 @@ def valid_one_epoch(
     preds, gt_all = [], []
     art_ok = []
     omni_students, omni_teachers = [], []   # one (n, 3584) tensor per video with omni teacher vectors
-    article_scores, article_truth = [], []  # per video: {'head' | 'step' | 'omni': (A,) scores}, true article
     for video_list in val_loader:
         for x in video_list:
             x['feats'] = {k: v.to(device) for k, v in x['feats'].items()}
@@ -211,16 +210,12 @@ def valid_one_epoch(
             gt_all.append((x['video_id'], x['activity'], gts, x['gt_steps']))
             if r['article_pred'] >= 0:
                 art_ok.append(r['article_pred'] == x['article'])
-            if r.get('article_scores'):
-                article_scores.append(r['article_scores'])
-                article_truth.append(x['article'])
             if r.get('omni_student') is not None:
                 omni_students.append(r['omni_student'])
                 omni_teachers.append(r['omni_teacher'])
 
     omni_cos, omni_cos_c, omni_r1 = omni_student_teacher_scores(
         omni_students, omni_teachers, getattr(model, 'omni_teacher_mean', None))
-    article_acc = article_accuracies(article_scores, article_truth)
     best_ious = np.array(best_ious)
     return {'R@0.3': float(100 * np.mean(best_ious >= 0.3)),
             'R@0.5': float(100 * np.mean(best_ious >= 0.5)),
@@ -232,34 +227,7 @@ def valid_one_epoch(
             'ArtAcc': float(100 * np.mean(art_ok)) if art_ok else -1.0,
             'OmniCos': omni_cos,
             'OmniCosC': omni_cos_c,
-            'OmniR@1': omni_r1,
-            # article accuracy of every article score, and of their fusion (-1 = not available)
-            'ArtAcc_step': article_acc.get('step', -1.0),
-            'ArtAcc_omni': article_acc.get('omni', -1.0),
-            'ArtAcc_fused': article_acc.get('fused', -1.0)}
-
-
-def article_accuracies(
-    scores,  # list, one dict per video: {'head' | 'step' | 'omni': (A,) score of every article}
-    truth,   # list, the true article of every video
-):
-    """Article accuracy (%) of every score, and of 'fused': the sum of the scores after a z-score per video
-    (each score minus its mean over the articles, divided by its standard deviation), so that scores of
-    different scales count the same."""
-    if not scores:
-        return {}
-    names = sorted(scores[0])
-    if not names:
-        return {}
-    correct = {name: [] for name in names + ['fused']}
-    for video_scores, article in zip(scores, truth):
-        fused = 0.0
-        for name in names:
-            score = video_scores[name]
-            correct[name].append(int(score.argmax()) == article)
-            fused = fused + (score - score.mean()) / score.std().clamp(min=1e-6)
-        correct['fused'].append(int(fused.argmax()) == article)
-    return {name: float(100 * np.mean(ok)) for name, ok in correct.items()}
+            'OmniR@1': omni_r1}
 
 
 def omni_student_teacher_scores(

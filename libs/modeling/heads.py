@@ -276,7 +276,7 @@ class ArticleHead(nn.Module):
         head_dim,          # size of the video and article vectors
         text_dim=512,      # size of the step text vectors
         num_articles=0,    # > 0: every article also gets its own learned vector, added to its text vector
-        attention_pool=False,  # True: learned attention pooling of every level instead of mean + max
+        attention_pool=False,  # True: learned attention pooling instead of mean + max
         pool_queries=4,        # attention_pool only: learned queries
     ):
         super().__init__()
@@ -309,17 +309,14 @@ class ArticleHead(nn.Module):
 
     def forward(
         self,
-        feats,    # list of (B, D, T_l) features, one entry per pyramid level used (only level 0, or all)
-        masks,    # list of (B, 1, T_l) bool, same levels
+        f,        # (B, D, T) level-0 features
+        m,        # (B, 1, T) bool, True = real step
         art_txt,  # (A, text_dim) article vectors
     ):
-        # video vector: every level is pooled and projected by the same MLP, then the levels are averaged.
-        # Level 0 sees every second; the coarse levels see long stretches of the video (the whole dish).
         if self.attention_pool is not None:
-            per_level = [self.attention_pool(f.transpose(1, 2), m.squeeze(1)) for f, m in zip(feats, masks)]
+            v = self.attention_pool(f.transpose(1, 2), m.squeeze(1))   # (B, head_dim) learned pooling
         else:
-            per_level = [self.vid(self.pool(f, m)) for f, m in zip(feats, masks)]   # each (B, head_dim)
-        v = torch.stack(per_level, dim=0).mean(dim=0)                            # (B, head_dim)
+            v = self.vid(self.pool(f, m))                               # (B, head_dim) mean + max, then MLP
         v = F.normalize(v, dim=-1)
 
         t = self.txt(art_txt)                                            # (A, head_dim)

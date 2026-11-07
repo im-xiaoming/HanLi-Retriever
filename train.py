@@ -55,7 +55,7 @@ def apply_overrides(settings):
 def metrics_line(m):
     """One line with the validation metrics; the ones that are -1 (head not used) are left out."""
     parts = [f"R@0.5 {m['R@0.5']:.2f}", f"mIoU {m['mIoU']:.2f}", f"Acc {m['Acc']:.2f}", f"mAP {m['mAP']:.2f}"]
-    for name in ['ArtAcc', 'ArtAcc_step', 'ArtAcc_omni', 'ArtAcc_fused', 'OmniCos', 'OmniCosC', 'OmniR@1']:
+    for name in ['ArtAcc', 'OmniCos', 'OmniCosC', 'OmniR@1']:
         if m.get(name, -1) >= 0:
             parts.append(f"{name} {m[name]:.2f}")
     return '  '.join(parts)
@@ -105,10 +105,9 @@ def main(args):
         torch.from_numpy(train_dataset.pool_emb).to(device), # (N, 512)
         [train_dataset.article_steps[a] for a in train_dataset.articles] # pool rows of every article's steps
     )
-    # the train segments with an OmniRetriever vector give the article prototypes of the omni article score
+    # mean of the train teacher vectors, removed by the OmniCosC metric
     if model.use_omni:
-        omni_vectors, omni_articles = train_dataset.omni_teacher_bank()
-        model.set_omni_teachers(torch.from_numpy(omni_vectors).to(device), torch.from_numpy(omni_articles).to(device))
+        model.omni_teacher_mean = torch.from_numpy(train_dataset.omni_teacher_mean()).to(device)
     # print('Parameters: %.1fM' % (sum(p.numel() for p in model.parameters()) / 1e6))
 
     if args.eval:   # score a checkpoint, no training
@@ -128,7 +127,6 @@ def main(args):
     scheduler = make_scheduler(optimizer, cfg['opt'], len(train_loader))
     model_ema = ModelEma(model, cfg['train_cfg']['ema_decay'])
     model_ema.module.set_step_pool(model.pool_raw, model.article_steps)
-    model_ema.module.omni_article_prototypes = model.omni_article_prototypes
     model_ema.module.omni_teacher_mean = model.omni_teacher_mean
     record = RunRecord(cfg, world_size) if is_main else None
 
@@ -138,7 +136,7 @@ def main(args):
     # unannotated (GT covers ~20% of a video), so it is only logged.
     # Early stop: a metric counts as improved only if it beats its best by at least --min_delta
     # (a gain of 0.01 means nothing); the run stops when none of the watched metrics improved for --patience epochs.
-    watched = ['mAP', 'ArtAcc_fused', 'OmniCos']
+    watched = ['mAP', 'ArtAcc', 'OmniCos']
     best = {name: (-1.0, 0) for name in watched}   # metric -> (best value, its epoch)
     ckpt_path = os.path.join(ckpt_folder, 'model_best.pth.tar')
     last_improvement = 0
@@ -161,7 +159,7 @@ def main(args):
             if 'mAP' in marks:
                 save_checkpoint({'epoch': epoch + 1, 'state_dict': model_ema.module.state_dict(), 'metrics': m},
                                 ckpt_folder, 'model_best.pth.tar')
-            if 'ArtAcc_fused' in marks:
+            if 'ArtAcc' in marks:
                 save_checkpoint({'epoch': epoch + 1, 'state_dict': model_ema.module.state_dict(), 'metrics': m},
                                 ckpt_folder, 'model_best_article.pth.tar')
             mark = f"  <- better {', '.join(marks)}" if marks else ''
@@ -193,7 +191,7 @@ if __name__ == '__main__':
     p.add_argument('--output', default='', help='run name: checkpoints go to ckpt/<output> (default: config output_folder)')
     p.add_argument('--set', nargs='+', action='extend', default=[], help='config overrides, e.g. model.article_head=True opt.epochs=8')
     p.add_argument('--patience', type=int, default=2,
-                   help='stop when no watched metric (mAP, ArtAcc_fused, OmniCos) has improved for this many epochs (0 = never)')
+                   help='stop when no watched metric (mAP, ArtAcc, OmniCos) has improved for this many epochs (0 = never)')
     p.add_argument('--min_delta', type=float, default=0.3,
                    help='a metric counts as improved only if it beats its best by at least this much')
     main(p.parse_args())

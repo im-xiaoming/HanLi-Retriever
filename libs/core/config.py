@@ -39,8 +39,6 @@ cfg = {
         # article_head only: 617 = every article gets its own learned vector (zero at start) on top of its text;
         # 0 = the article is its text only
         'article_learned': 0,
-        # article_head only: True = pool every pyramid level (coarse levels see long stretches), False = level 0
-        'article_all_levels': False,
         # article_head only: True = learned attention pooling (4 queries) instead of mean + max
         'article_attention_pool': False,
         # omni: True = a learned head compresses a (start, end) segment into its omni vector (attention pooling of
@@ -81,10 +79,6 @@ cfg = {
             'loss_weight_span': 0.2,
             'loss_weight_article': 0.5,   # article_head only
             'article_detach': False,      # article_head only: True = no article gradient into the backbone
-            'article_label_smoothing': 0.0,   # article_head only: label smoothing of the article cross-entropy
-            # article_head only: < 1 = in training the head sees one random window of every video, at least this
-            # fraction of it long (the other heads still see the whole video)
-            'article_crop_min': 1.0,
             'cls_prior_prob': 0.01,
             'dropout': 0.0,
             'droppath': 0.1,
