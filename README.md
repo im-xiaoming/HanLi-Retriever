@@ -87,8 +87,8 @@ student and the teacher of every val segment) and OmniR@1 (own teacher is the ne
 `model.omni_head_dim=0` turns the head off.
 
 Article prediction is scored three ways on val_seen: ArtAcc (article head), ArtAcc_step (for every step its best
-match over the video, averaged over the article's steps), ArtAcc_omni (kNN of the omni student against the train
-segments' OmniRetriever vectors), and ArtAcc_fused (sum of the three after a z-score per video).
+match over the video, averaged over the article's steps), ArtAcc_omni (event-weighted mean of the omni student vs the
+article prototypes, the mean OmniRetriever vector of each article's train segments), and ArtAcc_fused (sum of the three after a z-score per video).
 
 `tools/fetch_htstep.py` downloads the k400 features (train and val_seen) and the omni vectors into `datasets/`;
 `tools/validate_htstep.py` checks them against the annotations before training; `tools/colab_train.sh` runs

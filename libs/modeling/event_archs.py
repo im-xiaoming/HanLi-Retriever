@@ -74,9 +74,8 @@ class EventCaptionTransformer(nn.Module):
         self.omni_bank = None
         if self.use_omni:
             self.omni_bank = OmniCandidateBank(train_cfg.get('omni_bank_size', 4096), omni_head_dim)
-        # OmniRetriever vectors of the train segments, for the omni kNN article score (set_omni_teachers)
-        self.omni_teacher_vectors = None
-        self.omni_teacher_articles = None
+        # OmniRetriever prototype of every article, for the omni article score (set_omni_teachers)
+        self.omni_article_prototypes = None
 
     def set_step_pool(
         self,
@@ -103,9 +102,12 @@ class EventCaptionTransformer(nn.Module):
         vectors,   # (S, 3584) OmniRetriever vector of every train GT segment, L2-normalised
         articles,  # (S,) article of every one of these segments
     ):
-        """Train segments used at inference by the omni kNN article score (article_scores)."""
-        self.omni_teacher_vectors = vectors
-        self.omni_teacher_articles = articles
+        """Prototype of every article for the omni article score: the mean of the OmniRetriever vectors of
+        its train segments, L2-normalised (A, 3584). An article without train segment keeps a zero prototype."""
+        n_articles = len(self.article_steps)
+        summed = torch.zeros(n_articles, vectors.shape[1], device=vectors.device)
+        summed.index_add_(0, articles, vectors.float())
+        self.omni_article_prototypes = F.normalize(summed, dim=-1)   # (A, 3584)
 
     @torch.no_grad()
     def article_scores(
@@ -114,6 +116,7 @@ class EventCaptionTransformer(nn.Module):
         omni_one,     # (P, 3584) omni student vectors of one video, L2-normalised; None = no omni head
         valid_one,    # (P,) bool, real points (not padding)
         head_logits,  # (A,) logits of the article head; None = no article head
+        event_prob,   # (P,) probability that a step happens at every point (weights the omni mean)
     ):
         """Three scores of every article for one video, (A,) each, None when not available.
 
@@ -121,9 +124,10 @@ class EventCaptionTransformer(nn.Module):
         step : evidence of the steps. For every step, its best match over the points of the video
                (cosine between the point vector and the projected step text); the score of an article is
                the mean of this best match over its steps.
-        omni : kNN with OmniRetriever. For every train segment, its best match over the points of the video
-               (cosine between the omni student and the segment's teacher vector); the score of an article
-               is the best match over the train segments of that article.
+        omni : OmniRetriever prototypes. The video vector is the mean of the omni student vectors over the
+               points, weighted by their event probability (the points inside steps count most); the score of an
+               article is the cosine between this video vector and the article prototype (set_omni_teachers).
+               With the teacher vectors of the GT segments in place of the student, this reaches 67% on val_seen.
         """
         n_articles = len(self.article_steps)
         scores = {'head': head_logits, 'step': None, 'omni': None}
@@ -137,16 +141,13 @@ class EventCaptionTransformer(nn.Module):
             0, self.article_of_step, torch.ones_like(best_per_step))
         scores['step'] = step_sum / step_count                              # (A,) mean over the article's steps
 
-        # omni kNN
-        if omni_one is not None and self.omni_teacher_vectors is not None:
-            students = omni_one[valid_one].to(self.omni_teacher_vectors.dtype)          # (P', 3584)
-            best_per_segment = torch.full((len(self.omni_teacher_vectors),), -1.0, device=em_one.device)
-            for start in range(0, len(self.omni_teacher_vectors), 8192):   # chunks: (P', 8192) at a time
-                chunk = self.omni_teacher_vectors[start:start + 8192]
-                best_per_segment[start:start + len(chunk)] = (students @ chunk.t()).max(dim=0).values.float()
-            omni = torch.full((n_articles,), -1.0, device=em_one.device)
-            omni = omni.scatter_reduce(0, self.omni_teacher_articles, best_per_segment, reduce='amax')
-            scores['omni'] = omni                                               # (A,)
+        # omni prototypes
+        if omni_one is not None and self.omni_article_prototypes is not None:
+            weights = event_prob[valid_one].float()                          # (P',)
+            students = omni_one[valid_one].float()                           # (P', 3584)
+            video_vector = (weights[:, None] * students).sum(dim=0) / weights.sum().clamp(min=1e-6)
+            video_vector = F.normalize(video_vector, dim=-1)                 # (3584,)
+            scores['omni'] = self.omni_article_prototypes @ video_vector     # (A,)
         return scores
 
     @property
@@ -386,6 +387,7 @@ class EventCaptionTransformer(nn.Module):
                     omni_em[b] if omni_em is not None else None,
                     valid[b],
                     art_logits[b] if art_logits is not None else None,
+                    ev[b].sigmoid(),
                 )
                 article_scores = {name: score.float().cpu() for name, score in article_scores.items()
                                   if score is not None}

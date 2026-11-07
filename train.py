@@ -105,7 +105,7 @@ def main(args):
         torch.from_numpy(train_dataset.pool_emb).to(device), # (N, 512)
         [train_dataset.article_steps[a] for a in train_dataset.articles] # pool rows of every article's steps
     )
-    # the train segments with an OmniRetriever vector: the omni kNN article score compares a video with them
+    # the train segments with an OmniRetriever vector give the article prototypes of the omni article score
     if model.use_omni:
         omni_vectors, omni_articles = train_dataset.omni_teacher_bank()
         model.set_omni_teachers(torch.from_numpy(omni_vectors).to(device), torch.from_numpy(omni_articles).to(device))
@@ -128,7 +128,7 @@ def main(args):
     scheduler = make_scheduler(optimizer, cfg['opt'], len(train_loader))
     model_ema = ModelEma(model, cfg['train_cfg']['ema_decay'])
     model_ema.module.set_step_pool(model.pool_raw, model.article_steps)
-    model_ema.module.set_omni_teachers(model.omni_teacher_vectors, model.omni_teacher_articles)
+    model_ema.module.omni_article_prototypes = model.omni_article_prototypes
     record = RunRecord(cfg, world_size) if is_main else None
 
     """4. train / evaluate loop"""
