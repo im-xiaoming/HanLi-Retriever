@@ -41,6 +41,7 @@ class EventCaptionTransformer(nn.Module):
         article_cond=False,  # condition the features on the article's step texts (ActionFormer-T)
         article_head=False,  # predict the article from the video; test_cfg['pred_article'] uses it at inference
         article_learned=0,   # article_head only: > 0 = number of articles, each gets a learned vector too
+        article_all_levels=False,  # article_head only: pool every pyramid level (else only level 0)
     ):
         super().__init__()
         self.fpn_strides = [scale_factor ** i for i in range(backbone_arch[-1] + 1)] # [1, 2, 4, 8, 16, 32]
@@ -68,6 +69,7 @@ class EventCaptionTransformer(nn.Module):
         self.seg_ctx = SegmentContext(head_dim)
         self.article_cond = ArticleCondition(D, clip_dim) if article_cond else None
         self.article_head = ArticleHead(D, head_dim, clip_dim, article_learned) if article_head else None
+        self.article_all_levels = article_all_levels
 
         # omni head: every point inside a GT segment learns the OmniRetriever vector of that segment (teacher),
         # against the other segments of the batch and a mined list of candidates (see omni_bank.py)
@@ -177,8 +179,12 @@ class EventCaptionTransformer(nn.Module):
         art_logits = None
         if self.article_head is not None:
             # article_detach: the head reads the features but sends no gradient back into the backbone
-            f0 = feats[0].detach() if self.train_cfg.get('article_detach') else feats[0]
-            art_logits = self.article_head(f0, msk[0], self.article_raw)  # (B, A)
+            # article_all_levels: the head pools every pyramid level, else only level 0
+            n_levels = len(feats) if self.article_all_levels else 1
+            head_feats = list(feats[:n_levels])
+            if self.train_cfg.get('article_detach'):
+                head_feats = [f.detach() for f in head_feats]
+            art_logits = self.article_head(head_feats, list(msk[:n_levels]), self.article_raw)  # (B, A)
             
         cands = [x['cand'].to(self.device) for x in video_list]
         if not self.training and self.test_cfg.get('pred_article') and art_logits is not None:
@@ -293,7 +299,8 @@ class EventCaptionTransformer(nn.Module):
         # 6. article head: the video must pick its own article among all of them
         art_loss = torch.zeros((), device=dev)
         if art_logits is not None:
-            art_loss = F.cross_entropy(art_logits, torch.as_tensor([x['article'] for x in video_list], device=dev))
+            art_loss = F.cross_entropy(art_logits, torch.as_tensor([x['article'] for x in video_list], device=dev),
+                                       label_smoothing=w.get('article_label_smoothing', 0.0))
 
 
         total = (ev_loss + w['loss_weight_reg'] * rg_loss + w['loss_weight_iou'] * iou_loss

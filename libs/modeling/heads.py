@@ -216,22 +216,34 @@ class ArticleHead(nn.Module):
         if num_articles > 0:
             self.article_learned = nn.Parameter(torch.zeros(num_articles, head_dim))
 
-    def forward(
+    def pool(
         self,
-        f,        # (B, D, T) level-0 features
-        m,        # (B, 1, T) bool
-        art_txt,  # (A, text_dim) article vectors
+        f,  # (B, D, T) features of one pyramid level
+        m,  # (B, 1, T) bool, True = real step
     ):
+        """Mean and max over the real steps of one level, concatenated: (B, 2D)."""
         m = m.to(f.dtype)
         mean = (f * m).sum(-1) / m.sum(-1).clamp(min=1)
         mx = f.masked_fill(m == 0, -1e4).max(-1).values
-        v = F.normalize(self.vid(torch.cat((mean, mx), -1)), dim=-1)      # (B, head_dim), head_dim = 2D
-        
+        return torch.cat((mean, mx), -1)
+
+    def forward(
+        self,
+        feats,    # list of (B, D, T_l) features, one entry per pyramid level used (only level 0, or all)
+        masks,    # list of (B, 1, T_l) bool, same levels
+        art_txt,  # (A, text_dim) article vectors
+    ):
+        # video vector: every level is pooled and projected by the same MLP, then the levels are averaged.
+        # Level 0 sees every second; the coarse levels see long stretches of the video (the whole dish).
+        per_level = [self.vid(self.pool(f, m)) for f, m in zip(feats, masks)]   # each (B, head_dim)
+        v = torch.stack(per_level, dim=0).mean(dim=0)                            # (B, head_dim)
+        v = F.normalize(v, dim=-1)
+
         t = self.txt(art_txt)                                            # (A, head_dim)
         if self.article_learned is not None:
             t = t + self.article_learned
         t = F.normalize(t, dim=-1)
-        
+
         return self.logit_scale.exp().clamp(max=100) * v @ t.t()         # (B, A)
 
 

@@ -53,14 +53,17 @@ def main():
                 x['feats'] = {k: v.to(device) for k, v in x['feats'].items()}
             for r, x in zip(model(video_list), video_list):
                 scores = dict(r['article_scores'])
-                fused = 0.0
-                for s in scores.values():
-                    fused = fused + (s - s.mean()) / s.std().clamp(min=1e-6)
-                scores['fused'] = fused
+                # z-score of every score over the articles, then several fusions of them
+                z = {name: (s - s.mean()) / s.std().clamp(min=1e-6) for name, s in scores.items()}
+                if 'omni' in z:
+                    scores['head+omni'] = z['head'] + z['omni']
+                    scores['head+0.5omni'] = z['head'] + 0.5 * z['omni']
+                scores['head+step'] = z['head'] + z['step']
+                scores['fused(all)'] = sum(z.values())
                 for name, s in scores.items():
                     rows.setdefault(name, []).append((s.numpy(), x['article']))
 
-    print(f'{"score":8s} {"acc":>6s} {"activity":>9s} {"top5":>6s} {"same-dish errors":>17s}   ({len(rows["head"])} videos)')
+    print(f'{"score":13s} {"acc":>6s} {"activity":>9s} {"top5":>6s} {"same-dish errors":>17s}   ({len(rows["head"])} videos)')
     for name, items in rows.items():
         acc = act = top5 = wrong = same_dish = 0
         for s, truth in items:
@@ -72,7 +75,7 @@ def main():
                 wrong += 1
                 same_dish += activity_of[pred] == activity_of[truth]
         n = len(items)
-        print(f'{name:8s} {100 * acc / n:6.2f} {100 * act / n:9.2f} {100 * top5 / n:6.2f} '
+        print(f'{name:13s} {100 * acc / n:6.2f} {100 * act / n:9.2f} {100 * top5 / n:6.2f} '
               f'{100 * same_dish / max(wrong, 1):16.1f}%')
 
 
