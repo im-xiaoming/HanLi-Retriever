@@ -86,11 +86,11 @@ dropped. Negatives of the same step as the anchor are masked. Validation reports
 student and the teacher of every val segment) and OmniR@1 (own teacher is the nearest of all val teachers).
 `model.omni_head_dim=0` turns the head off.
 
-With `model.omni_span_head=True`, a learned head compresses a GT segment (start and end given) into its omni vector:
+The omni span head (`model.omni_span_head`, on by default) is a learned head that compresses a GT segment (start and end given) into its omni vector:
 attention pooling of the level-0 features (learned queries) and an MLP, trained with the same InfoNCE + cosine
 losses; OmniCos is then measured with it. OmniCosC is the cosine after removing the train teacher mean.
 
-Article prediction (`model.article_head=True`): ArtAcc on val_seen. `model.article_learned=617` adds a learned
+Article prediction (`model.article_head`, on by default): ArtAcc on val_seen. `model.article_learned=617` adds a learned
 vector per article to its text vector. With `test_cfg.pred_article=True`, `test_cfg.article_soft=True` lets every
 step compete with `log p(step | segment) + article_soft_weight * log p(its article | video)` instead of a hard
 top-1 article.
@@ -132,3 +132,7 @@ CSV, one row per chunk (same columns everywhere):
 | `shards_part1.csv`, `shards_part2.csv` | the two halves; part 1 is done on our machines |
 | `shards_part1_{pc,colab,kaggle0,kaggle1}.csv` | first split of part 1 between the machines |
 | `rest_{pc,colab,vast,kaggle}.csv` | current split of what is left of part 1 |
+
+The defaults in `libs/core/config.py` are the best run so far (pc_v6, val_seen): mAP 30.50 with the given article,
+21.23 with the predicted article (`--set model.test_cfg.pred_article=True model.test_cfg.article_soft=True`),
+ArtAcc 61.57, OmniCos 86.5 (OmniCosC 72.9, OmniR@1 ~60).

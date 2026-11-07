@@ -42,9 +42,8 @@ class EventCaptionTransformer(nn.Module):
         article_cond=False,  # condition the features on the article's step texts (ActionFormer-T)
         article_head=False,  # predict the article from the video; test_cfg['pred_article'] uses it at inference
         article_learned=0,   # article_head only: > 0 = number of articles, each gets a learned vector too
-        article_attention_pool=False,  # article_head only: learned attention pooling instead of mean + max
         omni_span_head=False,  # omni: a learned head compresses a (start, end) segment into one omni vector
-        pool_queries=4,        # learned queries of the attention poolings (omni span head, article head)
+        pool_queries=4,        # omni span head: learned queries of its attention pooling
         omni_span_hidden=2048, # hidden size of the omni span head MLP
     ):
         super().__init__()
@@ -74,8 +73,7 @@ class EventCaptionTransformer(nn.Module):
         self.article_cond = ArticleCondition(D, clip_dim) if article_cond else None
         self.article_head = None
         if article_head:
-            self.article_head = ArticleHead(D, head_dim, clip_dim, article_learned, article_attention_pool,
-                                            pool_queries)
+            self.article_head = ArticleHead(D, head_dim, clip_dim, article_learned)
 
         # omni head: every point inside a GT segment learns the OmniRetriever vector of that segment (teacher),
         # against the other segments of the batch and a mined list of candidates (see omni_bank.py)

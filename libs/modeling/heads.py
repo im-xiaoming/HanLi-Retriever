@@ -276,8 +276,6 @@ class ArticleHead(nn.Module):
         head_dim,          # size of the video and article vectors
         text_dim=512,      # size of the step text vectors
         num_articles=0,    # > 0: every article also gets its own learned vector, added to its text vector
-        attention_pool=False,  # True: learned attention pooling instead of mean + max
-        pool_queries=4,        # attention_pool only: learned queries
     ):
         super().__init__()
         self.vid = nn.Sequential(
@@ -285,9 +283,6 @@ class ArticleHead(nn.Module):
             nn.GELU(),
             nn.Linear(head_dim, head_dim)
         )
-        self.attention_pool = None
-        if attention_pool:
-            self.attention_pool = AttentionPool(dim, head_dim, n_queries=pool_queries, hidden=2 * head_dim)
         self.txt = nn.Linear(text_dim, head_dim)
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
         # learned part of every article vector. It starts at 0, so at first an article is its text only; with
@@ -313,11 +308,7 @@ class ArticleHead(nn.Module):
         m,        # (B, 1, T) bool, True = real step
         art_txt,  # (A, text_dim) article vectors
     ):
-        if self.attention_pool is not None:
-            v = self.attention_pool(f.transpose(1, 2), m.squeeze(1))   # (B, head_dim) learned pooling
-        else:
-            v = self.vid(self.pool(f, m))                               # (B, head_dim) mean + max, then MLP
-        v = F.normalize(v, dim=-1)
+        v = F.normalize(self.vid(self.pool(f, m)), dim=-1)              # (B, head_dim) mean + max, then MLP
 
         t = self.txt(art_txt)                                            # (A, head_dim)
         if self.article_learned is not None:

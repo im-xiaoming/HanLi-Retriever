@@ -33,19 +33,17 @@ cfg = {
         # 'dynE' (DyFADet encoder layers, video-audio cross-attention kept at the original resolution)
         'backbone_type': 'convTransformer',
         # condition the pyramid features on the article's step texts (ActionFormer-T of the HT-Step paper)
-        'article_cond': False,
+        'article_cond': True,      # pc_v6: mAP 30.50 with, ~25.5 without (article given)
         # predict the video's article (617 recipes) from the video, so it needs not be given at inference
-        'article_head': False,
+        'article_head': True,
         # article_head only: 617 = every article gets its own learned vector (zero at start) on top of its text;
         # 0 = the article is its text only
-        'article_learned': 0,
-        # article_head only: True = learned attention pooling (4 queries) instead of mean + max
-        'article_attention_pool': False,
+        'article_learned': 617,    # +5-7 ArtAcc over the text only
         # omni: True = a learned head compresses a (start, end) segment into its omni vector (attention pooling of
         # the level-0 features + MLP), trained on the GT segments; OmniCos is then measured with it
-        'omni_span_head': False,
-        'pool_queries': 4,          # learned queries of the attention poolings (omni span head, article head)
-        'omni_span_hidden': 2048,   # hidden size of the omni span head MLP
+        'omni_span_head': True,
+        'pool_queries': 8,          # omni span head: learned queries of its attention pooling
+        'omni_span_hidden': 4096,   # hidden size of the omni span head MLP
         'backbone_arch': [2, 3, 5],
         'scale_factor': 2,
         'input_dim_V': 768,
@@ -73,7 +71,7 @@ cfg = {
             'omni_temperature': 0.05,     # omni head: softmax temperature of the distillation loss
             # omni head: weight of 1 - cos(student, teacher). InfoNCE alone ignores the part every teacher shares
             # (the train mean already has cos 0.80 with a val teacher), so the student stays far from its teacher
-            'loss_weight_omni_cos': 1.0,
+            'loss_weight_omni_cos': 2.0,   # 2.0 keeps OmniCos ~86 (1.0 drifts down to 80)
             'loss_weight_omni_span_nce': 0.2,   # omni_span_head only: InfoNCE of the segment vectors
             'loss_weight_omni_span_cos': 2.0,   # omni_span_head only: 1 - cos of the segment vectors
             'loss_weight_span': 0.2,
