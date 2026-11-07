@@ -24,7 +24,8 @@ cfg = {
         'crop_ratio': [0.9, 1.0],
         'num_classes': 48,       # at most 48 GT segments per video (only 1 of the 18072 videos has more)
         'center_sample_radius': 0.0,   # > 0: event positives only within this many strides of a step centre
-        'omni_emb_dim': 3584
+        'omni_emb_dim': 3584,
+        'train_fraction': 1.0,   # < 1: train on a fixed random subset of the train videos (learning curves)
     },
 
     'model': {
@@ -72,6 +73,9 @@ cfg = {
             'loss_weight_article': 0.5,   # article_head only
             'article_detach': False,      # article_head only: True = no article gradient into the backbone
             'article_label_smoothing': 0.0,   # article_head only: label smoothing of the article cross-entropy
+            # article_head only: < 1 = in training the head sees one random window of every video, at least this
+            # fraction of it long (the other heads still see the whole video)
+            'article_crop_min': 1.0,
             'cls_prior_prob': 0.01,
             'dropout': 0.0,
             'droppath': 0.1,

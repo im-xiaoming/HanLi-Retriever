@@ -156,6 +156,30 @@ class EventCaptionTransformer(nn.Module):
             scores['omni'] = self.omni_article_prototypes @ video_vector     # (A,)
         return scores
 
+    def random_window_masks(
+        self,
+        masks,     # list of (B, 1, T_l) bool, one per pyramid level, True = real step
+        crop_min,  # shortest window, as a fraction of the real length of the video (e.g. 0.3)
+    ):
+        """Augmentation for the article head: keep one random window of every video, the same stretch of time at
+        every level. A video gives a different view every epoch, so the head cannot learn the train videos by heart
+        (with ~9 videos per article it reaches a train loss of 0.05 without it)."""
+        real_length = masks[0].squeeze(1).sum(-1).float()                    # (B,) real level-0 steps
+        batch = len(real_length)
+        device = real_length.device
+        fraction = crop_min + (1.0 - crop_min) * torch.rand(batch, device=device)   # (B,) window length
+        window = (fraction * real_length).clamp(min=1.0)                     # (B,) in level-0 steps
+        start = torch.rand(batch, device=device) * (real_length - window)    # (B,)
+        end = start + window
+
+        cropped = []
+        for level, m in enumerate(masks):
+            stride = 2 ** level                                              # level l: one step = 2^l level-0 steps
+            t = torch.arange(m.shape[-1], device=device).float() * stride   # (T_l,) time of every step, level-0 units
+            inside = (t[None, :] >= start[:, None] - stride) & (t[None, :] < end[:, None])   # (B, T_l)
+            cropped.append(m & inside[:, None, :])
+        return cropped
+
     @property
     def device(self):
         return list(set(p.device for p in self.parameters()))[0]
@@ -182,9 +206,14 @@ class EventCaptionTransformer(nn.Module):
             # article_all_levels: the head pools every pyramid level, else only level 0
             n_levels = len(feats) if self.article_all_levels else 1
             head_feats = list(feats[:n_levels])
+            head_masks = list(msk[:n_levels])
             if self.train_cfg.get('article_detach'):
                 head_feats = [f.detach() for f in head_feats]
-            art_logits = self.article_head(head_feats, list(msk[:n_levels]), self.article_raw)  # (B, A)
+            # article_crop_min < 1: during training the article head only sees a random stretch of every video
+            crop_min = self.train_cfg.get('article_crop_min', 1.0)
+            if self.training and crop_min < 1.0:
+                head_masks = self.random_window_masks(head_masks, crop_min)
+            art_logits = self.article_head(head_feats, head_masks, self.article_raw)  # (B, A)
             
         cands = [x['cand'].to(self.device) for x in video_list]
         if not self.training and self.test_cfg.get('pred_article') and art_logits is not None:

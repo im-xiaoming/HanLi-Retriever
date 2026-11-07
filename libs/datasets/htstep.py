@@ -37,6 +37,7 @@ class HTStepDataset(Dataset):
         regression_range, # regression range of every pyramid level
         backbone_arch,    # (#conv, #stem, #pyramid branch), gives the number of levels
         center_sample_radius=0.0,  # > 0: a point is positive only within this many strides of the segment centre
+        train_fraction=1.0,        # training split only: keep this fraction of the videos (learning curves)
         omni_emb_dim=3584
     ):
         self.feat_folder = feat_folder
@@ -75,6 +76,11 @@ class HTStepDataset(Dataset):
 
         # read the annotations, keep the videos of the split
         self.data_list = self._load_json_db(json_file)
+        if is_training and train_fraction < 1.0:
+            # a fixed random subset (same seed every run), to measure how the scores grow with the data
+            rng = np.random.RandomState(0)
+            keep = sorted(rng.choice(len(self.data_list), int(round(train_fraction * len(self.data_list))), replace=False))
+            self.data_list = tuple(self.data_list[i] for i in keep)
 
         # point generator of the pyramid
         self.fpn_strides = [scale_factor**i for i in range(backbone_arch[-1] + 1)] # [1, 2, 4, 8, 16, 32]
