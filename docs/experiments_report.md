@@ -364,3 +364,112 @@ Khoảng 93% lỗi là đoán sang món khác hẳn, không phải nhầm biến
 **Việc tiếp theo:**
 - ArtAcc đang bị giới hạn bởi dữ liệu. Mới có 5826 trên 17472 video train có feature k400. Nếu learning curve giữ đúng xu hướng, đủ dữ liệu có thể đưa ArtAcc lên khoảng **72–74%**.
 - Để làm việc này cần trích feature cho khoảng 11.6k video, tức là cần A100 hoặc compute unit.
+
+# Thí nghiệm HT-Step, 08/11/2026: ablation omni, rút gọn code, KL distillation
+
+- Nhánh: `htstep-omni-distill`. Commit cuối: `95d9592` (model cuối = run `a_kd`).
+- Máy: Colab A100 (gói Pro+ của tài khoản minhnguyen47431). Chạy 3 run cùng lúc trên một A100 40 GB, khoảng 220 s mỗi epoch. Chạy 4 run cùng lúc thì bị OOM.
+- Log: `logs/omab/<tên>.log` (ablation omni) và `logs/simp/<tên>.log` (rút gọn code, KL). Checkpoint nằm trên VM Colab nên không còn.
+- **Training tất định:** chạy lại cùng code, cùng dữ liệu, cùng seed cho ra kết quả giống hệt đến từng chữ số (`r_kd` lặp lại đúng `a_kd`). Vì vậy khác biệt giữa các run là do code, không phải do nhiễu ngẫu nhiên. Riêng việc đổi seed làm mAP lệch khoảng 0.05 (`f_emacrop` 29.05 so với `s_seed2` 29.00).
+- Dừng sớm, thang đo, batch và lr giống mục 07–08/11.
+
+## 1. Ablation omni (code trước khi rút gọn)
+
+Các run này dùng commit `b878676` (vẫn còn bank), cấu hình mặc định là pc_v6, mỗi run chỉ đổi đúng một khoá.
+
+| Lần chạy | Override (`--set`) | mAP (ep) | ArtAcc | OmniCos | OmniCosC | OmniR@1 |
+|---|---|---|---|---|---|---|
+| pc_v6 (PC, mốc cũ) | – | 30.50 | 61.6 | 86.5 | 72.9 | ~62 |
+| o_nobank | `model.train_cfg.omni_bank_size=0` | **31.15** (9) | 60.8 | 89.8 | 74.8 | 61.6 |
+| o_bank60k | `model.train_cfg.omni_bank_size=60000` | 30.91 (9) | 61.4 | 87.0 | 73.3 | 62.0 |
+| o_nopoint | `model.train_cfg.loss_weight_omni_emb=0.0 model.train_cfg.loss_weight_omni_cos=0.0` | 30.22 (9) | 60.2 | 86.4 | 72.4 | 58.1 |
+| o_nospannce | `model.train_cfg.loss_weight_omni_span_nce=0.0` | 29.73 (9) | 59.8 | 92.0 | 75.0 | 55.6 |
+| o_nospan | `model.omni_span_head=False` | 29.30 (10) | 57.3 | 85.9 | 69.2 | 50.4 |
+
+Kết luận:
+- Bank (4096 hay 60000) không giúp gì nên **đã xoá** (`omni_bank.py`, commit `2f40370`).
+- Span head và InfoNCE của span head có ích, giữ lại.
+- Loss omni theo point gần như không giúp mAP, nhưng giữ được khoảng 4 OmniR@1. Vẫn giữ.
+
+## 2. Rút gọn code và ablation từng phần
+
+Commit `0c85e95` rút gọn code:
+- Omni viết lại thành một danh sách teacher cho mỗi batch, mỗi student có một `target` trỏ tới dòng teacher của nó.
+- Các head luôn bật (bỏ cờ).
+- Bỏ các tuỳ chọn không dùng và các filter dữ liệu gần như không loại gì.
+
+Mốc mới là `s_base`, tức code rút gọn với cấu hình mặc định. Mỗi run `a_*` bỏ đúng một phần so với `s_base`.
+
+| Lần chạy | Code | Override (`--set`) | Bỏ phần nào | mAP (ep) | ArtAcc | OmniCos | OmniCosC | OmniR@1 |
+|---|---|---|---|---|---|---|---|---|
+| c_old | `6f7292b` (trước rút gọn) | – | (đối chứng) | 30.73 (10) | 62.2 | 89.7 | 74.7 | 62.0 |
+| s_base | `0c85e95` | – | (mốc) | 29.78 (10) | 60.8 | 89.8 | 74.8 | 62.8 |
+| a_nostep | `abl-nostep` | – | che teacher cùng step trong InfoNCE | 30.10 (10) | 60.0 | 89.9 | 74.9 | 62.4 |
+| a_noctx | `abl-noctx` | – | `SegmentContext` (vector đoạn = trung bình feature) | 29.91 (9) | 59.4 | 89.7 | 74.7 | 62.0 |
+| a_noemb | `0c85e95` | `model.train_cfg.loss_weight_emb=0.0` | InfoNCE theo point với text step | 30.42 (10) | 60.8 | 89.8 | 75.0 | 62.9 |
+| a_noiou | `0c85e95` | `model.train_cfg.loss_weight_iou=0.0 model.test_cfg.iou_power=0.0` | nhánh IoU-quality | 29.61 (10) | 60.2 | 89.8 | 74.8 | 62.2 |
+| a_noema | `0c85e95` | `train_cfg.ema_decay=0.0` | EMA | 29.77 (10) | 60.2 | 89.6 | 74.5 | 63.2 |
+| a_nocrop | `0c85e95` | `dataset.crop_ratio=[1.0,1.0]` | random crop | 30.26 (10) | 60.2 | 89.8 | 74.9 | 62.4 |
+| **a_kd** | `abl-kd` | – | InfoNCE → **KL distillation** (không che step) | **30.37** (10) | 59.8 | **91.1** | **75.2** | 60.8 |
+
+Bỏ riêng từng phần đều không làm kết quả kém đi so với `s_base`. KL distillation (gợi ý của bạn) cho OmniCos cao hơn khoảng 1.3 và OmniCosC cao hơn 0.4, đổi lại OmniR@1 thấp hơn khoảng 2.
+
+## 3. Ghép nhiều phần bỏ lại với nhau
+
+Các run `f_*` đều dùng KL, không che step. Cột "Giữ lại" cho biết run đó còn giữ những phần nào trong số EMA, crop, `emb_loss`, nhánh IoU và `SegmentContext`.
+
+| Lần chạy | Code | Override (`--set`) | Giữ lại | mAP (ep) | ArtAcc | OmniCos | OmniCosC | OmniR@1 |
+|---|---|---|---|---|---|---|---|---|
+| f_min | `ff66e7e` | – | không giữ phần nào | 28.42 (9) | 59.8 | 91.1 | 75.2 | 62.1 |
+| f_ema | `0b329c0` | `dataset.crop_ratio=[1.0,1.0]` | EMA | 28.58 (10) | 59.6 | 91.2 | 75.5 | 61.7 |
+| f_emacrop | `0b329c0` | – | EMA, crop | 29.05 (10) | 60.2 | 91.1 | 75.3 | 61.3 |
+| s_seed2 | `463a9bf` (= `0b329c0`) | `init_rand_seed=42` | EMA, crop | 29.00 (9) | 59.4 | 91.1 | 75.3 | 61.2 |
+| f_iou | `abl-kd-noctx` | `model.train_cfg.loss_weight_emb=0.0` | EMA, crop, IoU | 29.01 (9) | 61.2 | 91.1 | 75.3 | 61.2 |
+| f_ctx | `abl-kd` | `model.train_cfg.loss_weight_emb=0.0 model.train_cfg.loss_weight_iou=0.0 model.test_cfg.iou_power=0.0` | EMA, crop, `SegmentContext` | 29.09 (9) | 60.2 | 91.1 | 75.4 | 59.9 |
+| f_emb | `abl-emb` | – | EMA, crop, `emb_loss` | 29.65 (10) | 58.2 | 91.0 | 75.1 | 60.8 |
+| **a_kd** | `abl-kd` | – | **tất cả** | **30.37** (10) | 59.8 | 91.1 | 75.2 | 60.8 |
+
+Kết luận:
+- Bỏ riêng từng phần thì không sao, nhưng bỏ cùng lúc thì mAP giảm. Bỏ cả 5 phần làm mAP giảm khoảng 2 điểm (`f_min` 28.42).
+- Thêm lại riêng IoU hoặc riêng `SegmentContext` không lấy lại được gì. Thêm lại riêng `emb_loss` được khoảng +0.6 mAP. Phải có đủ cả ba (`emb_loss`, IoU, `SegmentContext`) mới đạt 30.37.
+- Các chỉ số omni (OmniCos ~91, OmniCosC ~75, OmniR@1 ~61) gần như không phụ thuộc vào những phần này. Chúng chỉ phụ thuộc vào KL, span head và loss cos.
+
+## 4. Tối ưu KL
+
+Cả ba run dùng code `ff66e7e`. Các run bị dừng sớm vì đã kém rõ ràng.
+
+| Lần chạy | Override (`--set`) | mAP (ep) | ArtAcc | OmniCos | OmniCosC | OmniR@1 | Ghi chú |
+|---|---|---|---|---|---|---|---|
+| f_min | – (nhiệt độ 0.05, trọng số KL 0.2) | 28.42 | 59.8 | 91.1 | 75.2 | 62.1 | |
+| k_t02 | `model.train_cfg.omni_temperature=0.02` | 28.43 | 58.4 | 91.0 | 73.6 | **66.4** | OmniR@1 +4, OmniCosC −1.6 |
+| k_t10 | `model.train_cfg.omni_temperature=0.1` | 21.89 (3) | 41.8 | 89.2 | 64.8 | 30.5 | dừng ở ep 3 |
+| k_kd1 | `model.train_cfg.loss_weight_omni_kd=1.0` | 20.71 (2) | 30.2 | 82.3 | 61.9 | 47.8 | OmniCos tụt, dừng ở ep 2 |
+
+Giữ nhiệt độ 0.05 và trọng số KL 0.2. Nhiệt độ 0.02 chỉ đáng dùng nếu ưu tiên OmniR@1 hơn OmniCosC.
+
+## 5. Model cuối (`95d9592`, giống hệt phép tính của `a_kd`)
+
+Đã kiểm tra: một bước train trên cùng batch cho ra loss giống nhau đến 6 chữ số thập phân. Hai bản chỉ khác tên khoá (`nce` đổi thành `kd`).
+
+| mAP | ArtAcc | OmniCos | OmniCosC | OmniR@1 |
+|---|---|---|---|---|
+| 30.37 | 59.8 | 91.1 | 75.2 | 60.8 |
+
+Config đầy đủ (`libs/core/config.py`, không cần `--set`):
+
+```
+dataset: max_seq_len 256, trunc_thresh 0.5, crop_ratio [0.9, 1.0], num_classes 48
+model:   num_articles 617, pool_queries 8, omni_span_hidden 4096, omni_head_dim 3584, backbone convTransformer
+train_cfg: loss_weight_reg 1.0, loss_weight_iou 1.0, loss_weight_emb 0.2, loss_weight_span 0.2,
+           loss_weight_omni_kd 0.2, loss_weight_omni_cos 2.0, omni_temperature 0.05, loss_weight_article 0.5
+test_cfg:  iou_power 0.3, nms_sigma 0.75, max_seg_num 200, article_soft False (True khi article không cho sẵn)
+train:     batch 32, lr 3e-4, clip_proj_lr 3e-3, weight decay 1e-4, 10 + 2 epoch warmup, EMA 0.999
+```
+
+Những gì đã xoá trong ngày (tổng cộng khoảng 210 dòng code ít hơn so với `6f7292b`):
+- Hai backbone `convPooler` (TemporalMaxer) và `dynE` (DyFADet).
+- Bank omni và mining.
+- `pred_article` chọn cứng, `article_detach`, `nmax`, `center_sample_radius`, `train_fraction`, `DropPath`.
+- Các cờ bật/tắt của artc, article head, `article_learned`, span head.
+- `seg_key`, cột positive và việc che cùng step trong loss omni.
+- Bước kiểm tra step_id của omni, filter annotation dài 0, filter >48 đoạn, filter duration, `filtering()`. Thay bằng một quy tắc duy nhất: giữ đoạn bắt đầu trước khi feature kết thúc và cắt đuôi.
