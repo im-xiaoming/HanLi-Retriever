@@ -9,7 +9,7 @@ from torch.utils.data import Dataset
 from torch.nn import functional as F
 
 from .datasets import register_dataset, make_generator
-from .data_utils import truncate_feats, label_points
+from .data_utils import label_points
 
 from .helper import load_step_vectors, load_omni_segments, load_normalize
 
@@ -18,7 +18,7 @@ from .helper import load_step_vectors, load_omni_segments, load_normalize
 class HTStepDataset(Dataset):
     def __init__(
         self,
-        is_training,      # True: training split (random crops)
+        is_training,      # True: training split
         split,            # list of subsets to keep, e.g. ['train']
         feat_folder,      # feature folder, one <id>.npz per video
         json_file,        # official HT-Step annotations: {id: {subset, duration, activity, annotations: [{segment, id}]}}
@@ -27,8 +27,6 @@ class HTStepDataset(Dataset):
         omni_emb_folder,  # OmniRetriever segment vectors: <folder>/train/<id>.npz and <folder>/val/<id>.npz
         default_fps,      # nominal fps (16), converts seconds <-> steps
         max_seq_len,      # steps per video (256)
-        trunc_thresh,     # a cropped segment is kept only if at least this fraction is left (0.5)
-        crop_ratio,       # (0.9, 1.0): a random crop keeps 90-100% of the video
         num_classes: int,      # at most this many GT segments per video (48)
         scale_factor,     # length ratio between two pyramid levels
         regression_range, # regression range of every pyramid level
@@ -37,11 +35,8 @@ class HTStepDataset(Dataset):
     ):
         self.feat_folder = feat_folder
         self.split = split
-        self.is_training = is_training
         self.default_fps = default_fps
         self.max_seq_len = max_seq_len
-        self.trunc_thresh = trunc_thresh
-        self.crop_ratio = crop_ratio
         self.num_classes = num_classes
         self.omni_emb_dim = omni_emb_dim
         # the train and val_seen omni vectors live in separate folders, so val never leaks into training
@@ -174,12 +169,8 @@ class HTStepDataset(Dataset):
                      'feat_stride': feat_stride,
                      'feat_num_frames': num_frames}
 
-        # random crop of the features during training
-        if self.is_training:
-            data_dict = truncate_feats(data_dict, self.max_seq_len, self.trunc_thresh, feat_offset, self.crop_ratio)
-
         # training targets of every pyramid point
-        points = self.point_generator(self.fpn_strides, data_dict['feats']['visual'], self.is_training)
+        points = self.point_generator(self.fpn_strides)
 
         data_dict['gt_cls_labels'], data_dict['gt_offsets'] = label_points(
             points, data_dict['segments'], data_dict['labels'], self.num_classes)
@@ -192,7 +183,6 @@ class HTStepDataset(Dataset):
         data_dict['step_idx'] = torch.from_numpy(sidx) # (48,)
 
         # teacher of the omni head: the OmniRetriever vector of every GT segment, in slot order (slot = label).
-        # Read after the random crop: the crop drops segments but never renumbers the slots.
         omni_vectors, omni_ok = load_omni_segments(
             os.path.join(self.omni_folder, vid_id + '.npz'),
             video_item['ann_slots'],

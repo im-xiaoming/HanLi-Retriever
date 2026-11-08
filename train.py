@@ -15,7 +15,7 @@ from libs.core import cfg
 from libs.datasets import make_dataset, make_data_loader
 from libs.modeling import make_multimodal_meta_arch
 from libs.utils import (train_one_epoch, valid_one_epoch, save_checkpoint,
-                        make_optimizer, make_scheduler, fix_random_seed, ModelEma, RunRecord)
+                        make_optimizer, make_scheduler, fix_random_seed, RunRecord)
 
 
 def setup_distributed():
@@ -121,9 +121,6 @@ def main(args):
         net = DistributedDataParallel(model, device_ids=[device.index] if device.type == 'cuda' else None)
     optimizer = make_optimizer(model, cfg['opt'])
     scheduler = make_scheduler(optimizer, cfg['opt'], len(train_loader))
-    model_ema = ModelEma(model, cfg['train_cfg']['ema_decay'])
-    model_ema.module.set_step_pool(model.pool_raw, model.article_steps)
-    model_ema.module.omni_teacher_mean = model.omni_teacher_mean
     record = RunRecord(cfg, world_size) if is_main else None
 
     """4. train / evaluate loop"""
@@ -139,11 +136,11 @@ def main(args):
     for epoch in range(max_epochs):
         start = time.time()
         train_sampler.set_epoch(epoch)
-        losses = train_one_epoch(train_loader, net, optimizer, scheduler, model_ema,
+        losses = train_one_epoch(train_loader, net, optimizer, scheduler,
                                  cfg['train_cfg']['clip_grad_l2norm'], device)
         stop = False
         if is_main:
-            m = valid_one_epoch(val_loader, model_ema.module, train_dataset.pool_text, device)
+            m = valid_one_epoch(val_loader, model, train_dataset.pool_text, device)
             marks = []
             for name in watched:
                 if m[name] >= best[name][0] + args.min_delta:
@@ -151,10 +148,10 @@ def main(args):
                     last_improvement = epoch
                     marks.append(name)
             if 'mAP' in marks:
-                save_checkpoint({'epoch': epoch + 1, 'state_dict': model_ema.module.state_dict(), 'metrics': m},
+                save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(), 'metrics': m},
                                 ckpt_folder, 'model_best.pth.tar')
             if 'ArtAcc' in marks:
-                save_checkpoint({'epoch': epoch + 1, 'state_dict': model_ema.module.state_dict(), 'metrics': m},
+                save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(), 'metrics': m},
                                 ckpt_folder, 'model_best_article.pth.tar')
             mark = f"  <- better {', '.join(marks)}" if marks else ''
             print(f"epoch {epoch + 1:2d}/{max_epochs}  {time.time() - start:4.0f}s  loss {losses['final_loss']:.3f}"

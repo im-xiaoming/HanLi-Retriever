@@ -54,7 +54,7 @@ def preprocessing(
     device
 ):
     """Stack the videos of the batch into (B, C=768, T) tensors and a (B, 1, T) mask.
-    T is always max_seq_len: videos cropped during training are padded."""
+    T is always max_seq_len (every video is resampled to max_seq_len steps)."""
 
     fv = [x['feats']['visual'] for x in video_list] # x['feats']['visual'] = (C, T')
     fa = [x['feats']['audio'] for x in video_list]

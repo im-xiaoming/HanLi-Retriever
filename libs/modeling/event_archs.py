@@ -218,7 +218,7 @@ class EventCaptionTransformer(nn.Module):
     def omni_losses(
         self,
         video_list,  # B dicts: omni_seg (48, 3584) teacher of every GT segment, omni_ok (48,) True = it has one,
-                     #          segments / labels = the GT segments left after the crop (labels = their slot)
+                     #          segments / labels = the GT segments (labels = their slot)
         pos,         # (B, P) bool, points inside a GT segment
         gt_cls,      # (B, P, 48) one-hot: the GT segment (slot) of every point
         omni_em,     # (B, P, 3584) point head: student vector of every point, L2-normalised
@@ -231,7 +231,7 @@ class EventCaptionTransformer(nn.Module):
            teacher_row[b, s] remembers where segment s of video b sits in that list (-1: no teacher).
         2. Point head: every point inside a GT segment that has a teacher is a student; its target is the row of
            its segment's teacher.
-        3. Span head: every GT segment (left after the crop) that has a teacher gets one student vector from the
+        3. Span head: every GT segment that has a teacher gets one student vector from the
            span head; its target is the row of its own teacher.
         Both are trained by omni_distill_loss (KL distillation over the M teachers + cosine to the own teacher).
         """

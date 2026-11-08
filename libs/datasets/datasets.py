@@ -1,5 +1,5 @@
 import torch
-from .data_utils import trivial_batch_collator, worker_init_reset_seed
+from .data_utils import trivial_batch_collator
 from typing import Literal
 
 datasets = {}
@@ -29,7 +29,7 @@ def make_dataset(name, is_training, split, **kwargs):
 
 def make_data_loader(dataset, is_training, generator, batch_size, num_workers, sampler):
     """
-        Build the DataLoader. Training drops the last incomplete batch and reseeds every worker
+        Build the DataLoader. Training drops the last incomplete batch
     """
     loader = torch.utils.data.DataLoader(
         dataset,
@@ -37,7 +37,6 @@ def make_data_loader(dataset, is_training, generator, batch_size, num_workers, s
         num_workers=num_workers,
         sampler=sampler,
         collate_fn=trivial_batch_collator, # do nothing
-        worker_init_fn=(worker_init_reset_seed if is_training else None),
         drop_last=is_training,
         generator=generator,
         persistent_workers=num_workers > 0
