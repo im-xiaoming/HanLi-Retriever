@@ -61,6 +61,7 @@ def main():
         fV, fA, msk = model.backbone(V, A, masks)
         feats = [torch.cat((v, x), dim=1) for v, x in zip(fV, fA)]
         art_logits = model.article_head(feats[0], msk[0], model.article_raw)
+        feat0_before_artc = feats[0]   # the article is not known yet: no information about it in these features
         cands = [x['cand'].to(dev) for x in videos]
         C = max(len(c) for c in cands)
         idx = torch.stack([F.pad(c, (0, C - len(c)), value=0) for c in cands])
@@ -72,8 +73,10 @@ def main():
         for b, x in enumerate(videos):
             # article on every video: the head, and the span head on the whole video vs the omni article texts
             whole_seg = torch.tensor([[0.0, float(len0[b]) - 1]], device=dev)
-            whole_vec = model.omni_span(feats[0][b], int(len0[b]), whole_seg)[0]
-            art_all.append((x['article'], art_logits[b].float().cpu(), (whole_vec @ omni_article.t()).cpu()))
+            whole_vec = model.omni_span(feats[0][b], int(len0[b]), whole_seg)[0]               # leaks (after artc)
+            clean_vec = model.omni_span(feat0_before_artc[b], int(len0[b]), whole_seg)[0]      # no leak
+            art_all.append((x['article'], art_logits[b].float().cpu(), (whole_vec @ omni_article.t()).cpu(),
+                            (clean_vec @ omni_article.t()).cpu()))
             ok = x['omni_ok'][x['labels']]
             if not ok.any():
                 continue
@@ -123,15 +126,23 @@ def main():
                   f'whole video {art_acc(whole):.2f}')
     print(f'  whole video alone: {art_acc([x[4] for x in art]):.2f}')
 
+    # upper bound for any student: the teacher AV vectors (real video, no leak), 179 videos with teachers
+    for temp in (0.02, 0.05):
+        for w in (0.25, 0.5, 1.0):
+            fused = [F.log_softmax(x[1], 0) + w * F.log_softmax(x[2] / temp, 0) for x in art]
+            print(f'  [179 videos] head + {w} * teacher omni (temp {temp}): {art_acc(fused):.2f}')
     ga = np.array([x[0] for x in art_all])
     def acc_all(scores):
         return 100.0 * float(np.mean([int(sc.argmax()) == gi for sc, gi in zip(scores, ga)]))
     print(f'ALL {len(art_all)} val videos: head {acc_all([x[1] for x in art_all]):.2f}   '
-          f'whole-video omni alone {acc_all([x[2] for x in art_all]):.2f}')
+          f'whole-video omni alone: after artc (leak) {acc_all([x[2] for x in art_all]):.2f}   '
+          f'before artc {acc_all([x[3] for x in art_all]):.2f}')
     for temp in (0.02, 0.05):
         for w in (0.25, 0.5, 1.0, 2.0):
-            fused = [F.log_softmax(x[1], 0) + w * F.log_softmax(x[2] / temp, 0) for x in art_all]
-            print(f'  head + {w} * whole-video omni (temp {temp}): {acc_all(fused):.2f}')
+            leak = [F.log_softmax(x[1], 0) + w * F.log_softmax(x[2] / temp, 0) for x in art_all]
+            clean = [F.log_softmax(x[1], 0) + w * F.log_softmax(x[3] / temp, 0) for x in art_all]
+            print(f'  head + {w} * whole-video omni (temp {temp}): after artc {acc_all(leak):.2f}   '
+                  f'before artc {acc_all(clean):.2f}')
 
 
 if __name__ == '__main__':
