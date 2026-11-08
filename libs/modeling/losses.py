@@ -125,7 +125,7 @@ def omni_distill_loss(
     (A mined bank of extra negatives, 4096 or 60000 of them, did not help: removed.)
     """
     # similarity to the positive: (N, 1)
-    positive = (students * teachers).sum(dim=-1, keepdim=True)
+    positive = F.cosine_similarity(students, teachers, dim=-1).unsqueeze(1)
 
     negative = students @ batch_vectors.t()                                                     # (N, M)
     same_segment = anchor_keys[:, None] == batch_keys[None, :]                                   # (N, M)
@@ -165,9 +165,11 @@ def omni_loss(
         zero = omni_em.sum() * 0.0   # no teacher in this batch: zero losses that keep the graph
         return {'nce': zero, 'cos': zero}
 
+    #           (N', 3584)
     students = omni_em[pos][point_has_teacher]                                     # (N, 3584)
-    anchor_video = video_of_point[point_has_teacher]                               # (N,)
-    anchor_slot = slot_of_point[point_has_teacher]                                 # (N,)
+    anchor_video = video_of_point[point_has_teacher]                               # (N,), row
+    anchor_slot = slot_of_point[point_has_teacher]                                 # (N,), index
+    
     teachers = teacher_all[anchor_video, anchor_slot]                              # (N, 3584)
     anchor_steps = cap_pool[anchor_video, anchor_slot]                             # (N,)
     anchor_keys = seg_keys[anchor_video, anchor_slot]                              # (N,)
@@ -183,7 +185,7 @@ def omni_loss(
                                  temperature)
 
     # 4. the direct pull: cosine distance between every student and its own teacher
-    cosine = (students * teachers).sum(dim=-1)   # (N,)
+    cosine = F.cosine_similarity(students, teachers, dim=-1)   # (N,)
     cos_loss = (1.0 - cosine).mean()
     return {'nce': nce_loss, 'cos': cos_loss}
 
@@ -202,5 +204,5 @@ def omni_span_loss(
     nce_loss = omni_distill_loss(students, teachers, steps, keys,
                                  teachers, steps, keys,      # in-batch negatives: the teachers of the batch
                                  temperature)
-    cos_loss = (1.0 - (students * teachers).sum(dim=-1)).mean()
+    cos_loss = (1.0 - F.cosine_similarity(students, teachers, dim=-1)).mean()
     return {'nce': nce_loss, 'cos': cos_loss}
