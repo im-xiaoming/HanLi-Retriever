@@ -11,7 +11,7 @@ from torch.nn import functional as F
 from .datasets import register_dataset, make_generator
 from .data_utils import truncate_feats, label_points
 
-from .helper import load_step_vectors, load_omni_segments, load_normalize
+from .helper import load_step_vectors, load_omni_segments, load_normalize, filtering
 import logging
 
 logger = logging.getLogger(__name__)
@@ -137,7 +137,7 @@ class HTStepDataset(Dataset):
             steps = np.array([self.step_row[a['id']] for a in anns], dtype=np.int64)
             dict_db += ({'id': key,
                          'fps': self.default_fps,
-                         'duration': value['duration'], # None
+                         'duration': value['duration'],
                          'segments': segments, # (n, 2)
                          'labels': np.arange(len(anns), dtype=np.int64),   # segment index; (n,)
                          # {index in the json 'annotations' list: slot (= label) of that segment}
@@ -193,10 +193,7 @@ class HTStepDataset(Dataset):
         labels = torch.from_numpy(video_item['labels']) # (n,)
         
         if self.is_training:
-            vid_len = self.max_seq_len + feat_offset
-            keep = [i for i, (s, e) in enumerate(segments.tolist()) if s < vid_len and e > s and (min(e, vid_len) - s) / (e - s) >= self.trunc_thresh]
-            keep = keep or [0]
-            segments, labels = segments[keep].clamp(max=vid_len), labels[keep]
+            segments, labels = filtering(segments, labels, self.max_seq_len, feat_offset, self.trunc_thresh)
 
         data_dict = {'video_id': vid_id,
                      'feats': {'visual': fv, 'audio': fa},

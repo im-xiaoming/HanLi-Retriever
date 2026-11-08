@@ -9,17 +9,6 @@ from .blocks import (get_sinusoid_encoding, TransformerBlock,
 
 @register_multimodal_backbone("convTransformer")
 class ConvTransformerBackbone(nn.Module):
-    """
-        Conv + transformer, one stream per modality.
-
-        Video (V) and audio (A) features each go through: conv embedding -> arch[1] - 1 self-attention blocks
-        -> one cross-modal block at the original resolution -> arch[2] cross-modal blocks, each halving
-        the length. The result is arch[2] + 1 pyramid levels per stream, with their masks.
-
-        Cross-modal block of stream X with the other stream Y (TransformerBlock(x1=X, x2=Y)):
-        out = X + Attention(query = Y, key = X, value = X), i.e. X is re-weighted over time
-        by where Y finds it relevant.
-    """
     def __init__(
         self,
         n_in_V,                # input video channels

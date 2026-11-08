@@ -18,25 +18,13 @@ def load_step_vectors(
 def load_omni_segments(
     path,           # <omni folder>/<video_id>.npz, or a path that does not exist (video without omni vectors)
     ann_slots,      # {index in the json 'annotations' list: slot of that segment in this video (0 .. n-1)}
-    slot_steps,     # (n,) step (pool row) of every slot, to check that the file matches the annotations
+    video_steps,     # (n,) step (pool row) of every slot, to check that the file matches the annotations
     step_row,       # {global_step_index: pool row}
-    num_slots=48,   # slots per video (num_classes)
+    num_classes=48,
     dim=3584,       # size of an OmniRetriever vector
 ):
-    """OmniRetriever encode_av vector of every GT segment of one video (the teacher of the omni head).
-
-    The npz holds one row per encoded segment:
-        emb (k, 3584)  float16, L2-normalised
-        seg_idx (k,)   index of the segment in the json 'annotations' list of the video
-        step_id (k,)   global_step_index of the segment (checked against the annotations)
-    Segments that could not be encoded (see _failed_steps.jsonl on HF) have no row.
-
-    Returns
-        vectors (num_slots, dim) float32, row = slot of the segment (same order as the GT segments)
-        ok      (num_slots,) bool, True if the slot has a teacher vector
-    """
-    vectors = np.zeros((num_slots, dim), dtype=np.float32)
-    ok = np.zeros((num_slots,), dtype=bool)
+    vectors = np.zeros((num_classes, dim), dtype=np.float32)
+    ok = np.zeros((num_classes,), dtype=bool)
     if not os.path.exists(path):
         return vectors, ok
 
@@ -44,10 +32,10 @@ def load_omni_segments(
     for emb, seg_idx, step_id in zip(z['emb'], z['seg_idx'], z['step_id']):
         seg_idx = int(seg_idx)
         if seg_idx not in ann_slots:
-            continue   # a segment the dataset dropped (zero length, or beyond num_slots)
+            continue
         slot = ann_slots[seg_idx]
-        if step_row.get(int(step_id)) != int(slot_steps[slot]):
-            continue   # the file does not match the annotations: never use a wrong teacher
+        if step_row.get(int(step_id)) != int(video_steps[slot]):
+            continue
         vector = emb.astype(np.float32)
         vectors[slot] = vector / max(float(np.linalg.norm(vector)), 1e-6)
         ok[slot] = True
@@ -60,6 +48,13 @@ def load_normalize(feat_folder, vid_id):
     fa = F.normalize(torch.from_numpy(z['a768'].astype(np.float32)), p=2, dim=-1, eps=1e-6)
     return fv, fa
 
+
+def filtering(segments, labels, max_seq_len, feat_offset, trunc_thresh):
+    vid_len = max_seq_len + feat_offset
+    keep = [i for i, (s, e) in enumerate(segments.tolist()) if s < vid_len and e > s and (min(e, vid_len) - s) / (e - s) >= trunc_thresh]
+    keep = keep or [0]
+    segments, labels = segments[keep].clamp(max=vid_len), labels[keep]
+    return segments, labels
 
 
 @torch.no_grad()

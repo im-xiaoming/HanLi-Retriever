@@ -44,8 +44,6 @@ def sigmoid_focal_loss(
     return loss
 
 
-
-
 def ctr_diou_loss_1d(
     input_offsets: torch.Tensor,
     target_offsets: torch.Tensor,
