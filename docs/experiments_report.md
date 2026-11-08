@@ -473,3 +473,37 @@ Những gì đã xoá trong ngày (tổng cộng khoảng 210 dòng code ít hơ
 - Các cờ bật/tắt của artc, article head, `article_learned`, span head.
 - `seg_key`, cột positive và việc che cùng step trong loss omni.
 - Bước kiểm tra step_id của omni, filter annotation dài 0, filter >48 đoạn, filter duration, `filtering()`. Thay bằng một quy tắc duy nhất: giữ đoạn bắt đầu trước khi feature kết thúc và cắt đuôi.
+
+## 6. Text của OmniRetriever (thử ngày 08–09/11, không giữ lại)
+
+Trích xuất:
+- `tools/omni_step_text.py` chạy `encode_text("<activity>: <headline>")` cho 4958 step, adapter `omniretriever-7b`, bf16.
+- Trên Colab L4 mất 70 giây. Kết quả lưu ở HF `htstep-text-feats/text_feats/step_emb_omni.npz` (3584 chiều).
+
+**Đo zero-shot với checkpoint pc_v6** (đoạn GT cho sẵn):
+- Chọn step trong article:
+  - InternVideo2: 63.15.
+  - Text omni so với AV của teacher: 59.35.
+  - Text omni so với span head: 52.41.
+  - Ghép InternVideo2 + omni: 65.00 (+1.85 Acc, không đổi mAP vì mAP article grounding không so sánh step).
+- Đoán article (510 video):
+  - Head: 61.57.
+  - Ghép thêm omni của cả video tính sau artc thì lên 66.08, nhưng **đây là rò rỉ đáp án**, vì artc đã nhận text của article đúng.
+  - Tính trước artc thì không tăng (61.76). Ngay cả mức trần dùng teacher trên đoạn GT cũng chỉ +2.8.
+
+**Train với text omni** (code `95d9592`, mốc = `a_kd`):
+
+| Lần chạy | Máy | Thay đổi | mAP (ep) | Acc | ArtAcc | OmniCos | OmniCosC | OmniR@1 |
+|---|---|---|---|---|---|---|---|---|
+| a_kd | A100 | – (mốc) | 30.37 (10) | 68.5 | 59.8 | 91.1 | 75.2 | 60.8 |
+| t_omni | L4 | `dataset.step_emb_file=./datasets/step_emb_omni.npz model.clip_dim=3584` (text omni thay InternVideo2 ở mọi chỗ) | 29.85 (10) | 67.6 | **61.2** | 91.2 | 75.4 | 62.2 |
+| t_both | PC | `dataset.step_emb_file=./datasets/step_emb_both.npz model.clip_dim=4096` (ghép InternVideo2 và omni) | 30.55 (8) | 68.7 | 59.6 | 91.1 | 75.2 | 62.1 |
+| t_align | L4 | nhánh `abl-omnitext` (đã xoá): thêm loss span head chọn text omni của step, trọng số 0.2 | 24.40 (3) | 55.0 | 47.8 | 84.3 | 65.5 | 35.9 |
+
+`t_align` bị dừng ở epoch 3, vì các chỉ số omni tụt 5–10 điểm.
+
+**Kết luận:** không cách nào cải thiện rõ ràng, nên giữ text InternVideo2 như cũ.
+- `t_omni` đổi được +1.4 ArtAcc nhưng mất 0.5 mAP.
+- `t_both` ngang mốc.
+
+File text omni vẫn còn trên HF và `tools/omni_step_text.py` vẫn được giữ, phòng khi cần dùng lại.
