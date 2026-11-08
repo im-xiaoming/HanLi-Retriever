@@ -1,6 +1,5 @@
 import torch
 from .data_utils import trivial_batch_collator, worker_init_reset_seed
-from typing import Literal
 
 datasets = {}
 def register_dataset(name):

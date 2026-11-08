@@ -1,5 +1,5 @@
-# Every parameter lives here. Edit this file to change one; there is no config file and only
-# --eval / --patience on the command line.
+# Every parameter lives here. Edit this file to change one, or override it for one run with
+# train.py --set dotted.key=value (e.g. --set opt.epochs=8). The defaults are run a_kd (docs/experiments_report.md).
 
 cfg = {
     'output_folder': './ckpt/htstep',
@@ -8,10 +8,10 @@ cfg = {
     'batch_size': 32,            # per GPU: with torchrun on N GPUs one step sees N * batch_size videos
 
     'dataset': {
-        # official HT-Step files (git clone https://github.com/facebookresearch/htstep data/htstep)
+        # official HT-Step files (https://github.com/facebookresearch/htstep, data/)
         'json_file': './datasets/annotations.json',
         'taxonomy_file': './datasets/taxonomy.csv',
-        # InternVideo2 text vectors (512-d) of the 4958 steps, "<activity>: <headline>" (tools/htstep_data.py steps)
+        # InternVideo2 text vectors (512-d) of the 4958 steps, "<activity>: <headline>" (tools/htstep_data.py build)
         'step_emb_file': './datasets/step_emb_iv2j.npz',
         # OmniRetriever encode_av vector (3584-d) of every GT segment: train/<id>.npz and val/<id>.npz
         # (tools/fetch_htstep.py; HF htstep-omni-av = train, htstep-val-seen-feats omni_av/ = val_seen)
@@ -50,6 +50,8 @@ cfg = {
         'clip_dim': 512,
         'train_cfg': {
             'loss_weight_reg': 1.0,
+            # the IoU-quality loss, the point step InfoNCE (emb) and SegmentContext: removing all three together
+            # costs 1.3 mAP (each alone does not)
             'loss_weight_iou': 1.0,
             'loss_weight_emb': 0.2,
             # omni (point head and span head, the same weights for both): KL distillation of the teacher's

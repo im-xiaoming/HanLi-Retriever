@@ -17,28 +17,34 @@ libs/
   core/config.py             every parameter: paths, model sizes, loss weights, optimisation
   datasets/                  data
     datasets.py              registry: make_dataset, make_data_loader, make_generator (as UniAV)
-    htstep.py                HT-Step dataset: features resampled to 256 steps, GT steps, captions
+    htstep.py                HT-Step dataset: features resampled to 256 steps, GT steps, article, omni teachers
+    helper.py                file readers (features, step vectors, omni vectors) and batch padding
     data_utils.py            random crop for training, training targets of every pyramid point
     loc_generators.py        the points of the pyramid
   modeling/                  model
     blocks.py                UniAV blocks: MaskedConv1D, LayerNorm, attention, Transformer block
     multimodal_backbones.py  UniAV backbone: video and audio streams, cross-attention, 6-level pyramid
-    losses.py                focal loss, DIoU loss
-    event_archs.py           the heads (event, boundary, step classifier, optional omni / audio), losses, inference
+    heads.py                 event, boundary, embedding, article conditioning, article head, omni span head
+    losses.py                focal loss, DIoU loss, step InfoNCE, omni distillation (KL + cosine)
+    event_archs.py           the model: forward, losses, inference
     models.py                registry of backbones and models (as UniAV)
   utils/                     training helpers
-    train_utils.py           seed, optimizer, EMA, one training epoch, validation (R@0.5, CIDEr, Acc, mAP)
-    nms.py                   1D soft-NMS (numpy)
+    train_utils.py           seed, optimizer, EMA, one training epoch, validation (mAP, ArtAcc, Omni*, ...)
+    nms.py                   1D soft-NMS
     cider.py                 CIDEr metric (same numbers as pycocoevalcap)
     lr_schedulers.py         linear warm-up then cosine decay
     run_record.py            run record: experiments/runs/<host>-<time>.json
-tools/                       data preparation, not needed for training once data/ is filled
-  htstep_data.py             build: step text vectors; fetch: official files, step vectors and features
+tools/                       data preparation, not needed for training once datasets/ is filled
+  fetch_htstep.py            k400 features (train, val_seen) and OmniRetriever segment vectors -> datasets/
+  validate_htstep.py         checks the features and omni vectors against the annotations
+  colab_train.sh             Colab: setup (code, data, validation), then train
+  htstep_data.py             build: InternVideo2 step text vectors (step_emb_iv2j.npz)
   iv2_text.py                InternVideo2 text encoder (text -> 512-d vector), used by htstep_data.py build
+  omni_step_text.py          OmniRetriever text vectors of the steps (tried, not used by the model)
   pipeline/                  video download + feature extraction for HT-Step, see "Feature pipeline" below
-data/htstep/                 (not in git) official repo clone (data/annotations.json, data/taxonomy.csv, evaluation/),
-                             step_emb_iv2j.npz, k400_feats/<video_id>.npz
-ckpt/                        (not in git) checkpoints; ckpt/internvideo2/ holds the extractor weights
+datasets/                    (not in git) annotations.json, taxonomy.csv, step_emb_iv2j.npz,
+                             k400_feats/<video_id>.npz, omni_av_feats/{train,val}/<video_id>.npz
+ckpt/                        (not in git) checkpoints
 experiments/runs/            (created by train.py) one JSON record per training run
 ```
 
@@ -53,15 +59,39 @@ On Colab the default runtime already has Python 3.13 and PyTorch; only `pip inst
 
 ## Data
 
-    python tools/htstep_data.py fetch
+- `datasets/annotations.json`, `datasets/taxonomy.csv`: the official [HT-Step repo](https://github.com/facebookresearch/htstep).
+- `datasets/step_emb_iv2j.npz`: InternVideo2 text vectors of `"<activity>: <headline>"` for the 4958 steps
+  (`python tools/htstep_data.py build`, on HF `nguyenminh04/htstep-text-feats`).
+- `python tools/fetch_htstep.py` downloads the k400_f16 features of the annotated videos (HF
+  `nguyenminh04/htstep-feats-k400` for train, `nguyenminh04/htstep-val-seen-feats` for val_seen) into
+  `datasets/k400_feats/`: one file per video, `k768` (InternVideo2-1B K400 f16, 4 fps, ~4 s window) and `a768`
+  (BEATs audio, zeros if the video has no audio), one row per second. It also downloads the OmniRetriever
+  `encode_av` vector of every GT segment (`nguyenminh04/htstep-omni-av` for train, `htstep-val-seen-feats/omni_av/`
+  for val_seen) into `datasets/omni_av_feats/{train,val}/`. Needs `HF_TOKEN` in the environment or `.env`.
+- `python tools/validate_htstep.py` checks them against the annotations; `tools/colab_train.sh` does all of this
+  on Colab, then trains.
 
-clones the official [HT-Step repo](https://github.com/facebookresearch/htstep) into `data/htstep` (annotations of
-the train / val_seen splits, taxonomy, evaluation script), downloads `step_emb_iv2j.npz` (InternVideo2 text vectors
-of `"<activity>: <headline>"` for every step, made by `python tools/htstep_data.py build`) from
-`nguyenminh04/htstep-text-feats`, and the k400_f16 features of the annotated videos from `nguyenminh04/htstep-feats-k400`
-(train) and `nguyenminh04/htstep-val-seen-feats` (val_seen) into `data/htstep/k400_feats/`. One file per video:
-`k768` (InternVideo2-1B K400 f16, 4 fps, ~4 s window) and `a768` (BEATs audio, zeros if the video has no audio), one
-row per second. Videos without features are skipped. Needs `HF_TOKEN` in the environment or `.env`.
+## Model
+
+The UniAV backbone gives a 6-level pyramid of video + audio features. On top of it:
+
+- **Article conditioning**: the features attend to the step texts of the video's article (given, as in the HT-Step
+  article grounding task).
+- **Event and boundary heads**: an event score and the distances to the step start and end at every point, plus an
+  IoU-quality score used for ranking.
+- **Step choice**: the segment vector (mean of the level-0 features over the segment, refined by `SegmentContext`)
+  is compared with the step texts of the article (InfoNCE, also on every point inside a GT segment).
+- **Article head**: picks the video's article among the 617 (text of its steps + a learned vector per article),
+  so the article needs not be given (`test_cfg.article_soft=True`: every step competes with
+  `log p(step | segment) + article_soft_weight * log p(its article | video)`).
+- **Omni distillation**: the model learns the OmniRetriever `encode_av` vector (teacher, 3584-d) of every GT segment,
+  with a point head (every point inside the segment) and a span head (attention pooling of the segment, start and
+  end given). Loss: KL distillation of the teacher's similarity distribution over the teachers of the batch, plus
+  `1 - cos(student, teacher)`.
+
+Removed after ablations (see docs/experiments_report.md): a mined bank of omni negatives, the same-step mask,
+two other backbones (TemporalMaxer, DyFADet), the OmniRetriever step texts. The emb loss, IoU branch,
+SegmentContext, EMA and random crop look useless one at a time but cost 1.3-2 mAP when removed together.
 
 ## Train
 
@@ -69,34 +99,15 @@ row per second. Videos without features are skipped. Needs `HF_TOKEN` in the env
     torchrun --nproc_per_node=4 train.py          # 4 GPUs: one process each, batch_size videos per GPU
     python train.py --eval ckpt/htstep/model_best.pth.tar   # score a checkpoint
 
-Every epoch prints, on val_seen: the loss, R@0.5 (GT steps matched by one of the top-k predictions with IoU >= 0.5),
-CIDEr of the captions (headlines) of the matched steps, Acc (matched steps given the right step) and mAP (official
-article grounding mAP, tIoU 0.3-0.7, same numbers as `data/htstep/evaluation/eval_article_grounding.py` on the
-videos that have features). The checkpoint with the best mAP goes to `ckpt/htstep/model_best.pth.tar` (R@0.5 is
-only logged: HT-Step leaves many real steps unannotated, and R@0.5 counts them as false detections). Training stops
-when none of mAP, ArtAcc and OmniCos has improved by at least `--min_delta` (0.3) for `--patience` epochs
-(default 2). Other parameters are edited in `libs/core/config.py`, or overridden with
-`--set model.article_head=True opt.epochs=8`; `--output NAME` writes the checkpoints to `ckpt/NAME`.
-
-The omni head distils OmniRetriever: every point inside a GT segment learns the OmniRetriever `encode_av` vector of
-that segment (`datasets/omni_av_feats/train|val/<id>.npz`, one 3584-d row per segment). The loss is an InfoNCE whose
-negatives are the other segments of the batch (a mined bank of extra negatives did not help and was removed).
-Negatives of the same step as the anchor are masked. Validation reports OmniCos (mean cosine between the
-student and the teacher of every val segment) and OmniR@1 (own teacher is the nearest of all val teachers).
-`model.omni_head_dim=0` turns the head off.
-
-The omni span head (`model.omni_span_head`, on by default) is a learned head that compresses a GT segment (start and end given) into its omni vector:
-attention pooling of the level-0 features (learned queries) and an MLP, trained with the same InfoNCE + cosine
-losses; OmniCos is then measured with it. OmniCosC is the cosine after removing the train teacher mean.
-
-Article prediction (`model.article_head`, on by default): ArtAcc on val_seen. `model.article_learned=617` adds a learned
-vector per article to its text vector. With `test_cfg.pred_article=True`, `test_cfg.article_soft=True` lets every
-step compete with `log p(step | segment) + article_soft_weight * log p(its article | video)` instead of a hard
-top-1 article.
-
-`tools/fetch_htstep.py` downloads the k400 features (train and val_seen) and the omni vectors into `datasets/`;
-`tools/validate_htstep.py` checks them against the annotations before training; `tools/colab_train.sh` runs
-both on Colab, then trains.
+Every epoch prints, on val_seen: R@0.5, mIoU, Acc (matched steps given the right step), mAP (official article
+grounding mAP, tIoU 0.3-0.7, same numbers as the official evaluation script on the videos that have features),
+ArtAcc (article head), OmniCos (cosine between the span head and the teacher on the GT segments), OmniCosC (the same
+after removing the train teacher mean) and OmniR@1 (own teacher is the nearest of all val teachers). The checkpoint
+with the best mAP goes to `ckpt/<run>/model_best.pth.tar`, the best ArtAcc to `model_best_article.pth.tar`.
+Training stops when none of mAP, ArtAcc and OmniCos has improved by at least `--min_delta` (0.3) for `--patience`
+epochs (default 2). Parameters are edited in `libs/core/config.py`, or overridden with
+`--set opt.epochs=8 model.train_cfg.loss_weight_span=0.5`; `--output NAME` writes the checkpoints to `ckpt/NAME`.
+Training is deterministic: the same code, data and seed give the same numbers.
 
 ## Feature pipeline (`tools/pipeline/`)
 
@@ -132,6 +143,7 @@ CSV, one row per chunk (same columns everywhere):
 | `shards_part1_{pc,colab,kaggle0,kaggle1}.csv` | first split of part 1 between the machines |
 | `rest_{pc,colab,vast,kaggle}.csv` | current split of what is left of part 1 |
 
-The defaults in `libs/core/config.py` are the best run so far (pc_v6, val_seen): mAP 30.50 with the given article,
-21.23 with the predicted article (`--set model.test_cfg.pred_article=True model.test_cfg.article_soft=True`),
-ArtAcc 61.57, OmniCos 86.5 (OmniCosC 72.9, OmniR@1 ~60).
+## Results
+
+The defaults in `libs/core/config.py` are run a_kd (Colab A100, val_seen): mAP 30.37 with the given article,
+ArtAcc 59.8, OmniCos 91.1, OmniCosC 75.2, OmniR@1 60.8. All runs: docs/experiments_report.md.
