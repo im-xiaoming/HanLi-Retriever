@@ -153,26 +153,55 @@ def omni_loss(
         cos : 1 - cosine(student, teacher), pulls the student onto its teacher, shared part included
     """
     dev = omni_em.device
+
+    # ---- 0. what the dataset gives, stacked over the B videos of the batch -------------------------------------
+    # Every video has 48 slots, slot s = its s-th GT segment (the same number as its label in gt_cls).
+    #   teacher_all[b, s] : OmniRetriever vector (the teacher) of segment s of video b, zeros if it has none
+    #   has_teacher[b, s] : True if that segment has a teacher vector (some segments could not be encoded,
+    #                       and the slots after the last segment of the video are empty)
+    #   seg_keys[b, s]    : a number unique to that segment in the whole split, used below to recognise
+    #                       "the anchor's own segment" among the negatives
     teacher_all = torch.stack([x['omni_seg'] for x in video_list]).to(dev)   # (B, 48, 3584)
     has_teacher = torch.stack([x['omni_ok'] for x in video_list]).to(dev)    # (B, 48)
     seg_keys = torch.stack([x['seg_key'] for x in video_list]).to(dev)       # (B, 48)
 
-    # 1. the anchors: every positive point whose GT segment has a teacher vector
+    # ---- 1. the anchors: every positive point whose GT segment has a teacher vector ---------------------------
+    # pos (B, P) marks the points that lie inside a GT segment. Indexing a tensor with pos (omni_em[pos],
+    # gt_cls[pos], ...) keeps those points only and lays them out as one list of N' rows, always in the same
+    # order: video 0 first (points in time order), then video 1, and so on. Every list built below follows that
+    # order, so row k of each of them talks about the same point.
+    #
+    # video_of_point: pos.nonzero gives the coordinates (video, point) of every True cell of pos;
+    #                 [0] keeps the first coordinate, the video the point belongs to.
     video_of_point = pos.nonzero(as_tuple=True)[0]          # (N',) video of every positive point
+    # slot_of_point: gt_cls[pos] is the one-hot row (48 columns) of every positive point;
+    #                argmax gives the column holding the 1, i.e. the GT segment the point lies in.
     slot_of_point = gt_cls[pos].argmax(-1)                  # (N',) GT segment (slot) of every positive point
+    # point_has_teacher: for every positive point, look up has_teacher at (its video, its segment).
+    #                    True = the point can be trained (its segment has a teacher), False = skip it.
     point_has_teacher = has_teacher[video_of_point, slot_of_point]   # (N',)
     if not point_has_teacher.any():
         zero = omni_em.sum() * 0.0   # no teacher in this batch: zero losses that keep the graph
         return {'nce': zero, 'cos': zero}
 
-    students = omni_em[pos][point_has_teacher]                                     # (N, 3584)
-    anchor_video = video_of_point[point_has_teacher]                               # (N,)
-    anchor_slot = slot_of_point[point_has_teacher]                                 # (N,)
+    # Keep only the points that have a teacher. The same mask filters every list, so they stay aligned:
+    # students[i], anchor_video[i], anchor_slot[i] all describe the same point i.
+    students = omni_em[pos][point_has_teacher]                                     # (N, 3584) model output
+    anchor_video = video_of_point[point_has_teacher]                               # (N,) its video
+    anchor_slot = slot_of_point[point_has_teacher]                                 # (N,) its segment
+    
+    # With (video, segment) of every anchor, read what belongs to its segment:
+    #   teachers     : the vector the student must reproduce (the right answer)
+    #   anchor_steps : the step of the segment, to mask the negatives of the same step (same action elsewhere)
+    #   anchor_keys  : the id of the segment, to mask the anchor's own segment among the negatives
     teachers = teacher_all[anchor_video, anchor_slot]                              # (N, 3584)
     anchor_steps = cap_pool[anchor_video, anchor_slot]                             # (N,)
     anchor_keys = seg_keys[anchor_video, anchor_slot]                              # (N,)
 
-    # 2. the in-batch negatives: every GT segment of the batch that has a teacher vector
+    # ---- 2. the in-batch negatives: every GT segment of the batch that has a teacher vector ------------------
+    # teacher_all[has_teacher] keeps the (video, slot) cells that have a teacher: M segments in total.
+    # These are the choices every student is compared with; its own segment is among them and is masked
+    # in omni_distill_loss (via the keys), as are the segments of the same step (via the steps).
     batch_vectors = teacher_all[has_teacher]                                       # (M, 3584)
     batch_steps = cap_pool[has_teacher]                                            # (M,)
     batch_keys = seg_keys[has_teacher]                                             # (M,)
