@@ -24,7 +24,8 @@ Audio (both models), skipped when audio_ckpt is '':
   a768 (n_sec, 768)  BEATs vector of the 3 s around each second (zeros if the video has no audio)
 
 The training config picks the rows with dataset.iv2_video_keys (['k768'] or ['v768']) and
-dataset.iv2_folder. Videos already in --out are skipped, so a stopped run just resumes.
+dataset.iv2_folder. Videos already in --out are skipped, so a stopped run just resumes. With --upload, the .npz of
+a chunk's tar already on HF (a partial upload) are copied into --out first, so another machine can resume it.
 
 Needs: ffmpeg on PATH, torch, timm, einops, and the upstream repo cloned unmodified:
   git clone --depth 1 https://github.com/OpenGVLab/InternVideo
@@ -297,6 +298,25 @@ def upload_chunk(chunk, ids, failed, cfg, partial=False):
     print('UPLOADED %s%s' % (path, ' (partial)' if partial else ''), flush=True)
 
 
+def fetch_uploaded(chunk, cfg):
+    """With upload: copy the .npz of the chunk's tar already on HF (a partial upload, maybe from another machine)
+    into out, so they are not extracted again and the final upload of this machine still contains them."""
+    from huggingface_hub import hf_hub_download
+    try:
+        tar = hf_hub_download(MODELS[cfg['model']]['repo'], 'feats/htstep_feats_%s.tar' % chunk, repo_type='dataset',
+                              token=hf_token(), local_dir=os.path.join(cfg['out'], '.hf'))
+    except Exception:   # nothing on HF yet
+        return
+    n = 0
+    with tarfile.open(tar) as t:
+        for m in t.getmembers():
+            if m.name.endswith('.npz') and not os.path.exists(os.path.join(cfg['out'], m.name)):
+                t.extract(m, cfg['out'])
+                n += 1
+    os.remove(tar)
+    print('chunk %s: %d npz taken from the tar on HF' % (chunk, n), flush=True)
+
+
 def hf_token():
     tok = os.environ.get('HF_TOKEN')
     env = os.path.join(ROOT, '.env')
@@ -342,6 +362,8 @@ def main(cfg):
             print('%d chunks ready, %d videos to extract with %s -> %s' % (
                 len(ready), n_todo - count, cfg['model'], cfg['out']), flush=True)
             for chunk, paths in ready:
+                if cfg['upload'] and chunk:
+                    fetch_uploaded(chunk, cfg)
                 todo = sorted(v for v in paths if not done(v))[:max(0, n_todo - count)]
                 failed = {}   # video id -> FAIL / SKIP line, for failed.txt
                 # keep `decode_ahead` videos decoding in the background while the GPU extracts the current one
