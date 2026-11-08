@@ -160,7 +160,8 @@ def omni_loss(
 
     # 1. the anchors: every point that lies inside a GT segment AND whose segment has a teacher vector
     slot = gt_cls.argmax(-1)                          # (B, P) GT segment (slot) of every point (0 outside any)
-    slot_has_teacher = has_teacher.gather(1, slot)    # (B, P) True = the segment of this point has a teacher
+    video = torch.arange(slot.shape[0], device=dev)[:, None].expand_as(slot)   # (B, P) video of every point
+    slot_has_teacher = has_teacher[video, slot]       # (B, P) [b, p] = has_teacher[b, slot[b, p]]
     is_anchor = pos & slot_has_teacher                # (B, P)
     if not is_anchor.any():
         zero = omni_em.sum() * 0.0   # no teacher in this batch: zero losses that keep the graph
