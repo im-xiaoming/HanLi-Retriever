@@ -1,4 +1,5 @@
 import os
+import copy
 import random
 
 import numpy as np
@@ -64,11 +65,38 @@ def make_scheduler(optimizer, optimizer_config, num_iters_per_epoch):
     return LinearWarmupCosineAnnealingLR(optimizer, warmup_steps, max_steps)
 
 
+class ModelEma(torch.nn.Module):
+    """Exponential moving average (EMA) of the weights, as ActionFormer: evaluation and checkpoints
+    both use these averaged weights."""
+
+    def __init__(self, model, decay=0.999):
+        super().__init__()
+        # a copy of the model accumulates the moving average
+        self.module = copy.deepcopy(model)
+        self.module.eval()
+        self.decay = decay
+        self.updates = 0
+
+    @torch.no_grad()
+    def update(self, model):
+        # the decay ramps up: with a fixed 0.999 the weights are still almost the initial ones after the
+        # first epoch, and the first evaluations would score a model that has learnt nothing
+        model = getattr(model, 'module', model)   # the model inside DistributedDataParallel
+        self.updates += 1
+        d = min(self.decay, (1 + self.updates) / (10 + self.updates))
+        for ema_v, model_v in zip(self.module.state_dict().values(), model.state_dict().values()):
+            if ema_v.dtype.is_floating_point:
+                ema_v.mul_(d).add_(model_v.detach(), alpha=1 - d)
+            else:
+                ema_v.copy_(model_v)
+
+
 def train_one_epoch(
     train_loader,      # DataLoader, every batch is a list of dicts (see HTStepDataset.__getitem__)
     model,             # the model, or the DistributedDataParallel around it
     optimizer,
     scheduler,
+    model_ema,         # ModelEma, updated after every step
     clip_grad_l2norm,  # maximum L2 norm of the gradients
     device,
 ):
@@ -84,6 +112,7 @@ def train_one_epoch(
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad_l2norm)
         optimizer.step()
         scheduler.step()   # the learning rate steps after every iteration, not every epoch
+        model_ema.update(model)
         for k, v in losses_dict.items():
             losses[k] = losses.get(k, 0.0) + v.item() / len(train_loader)
     return losses
@@ -148,7 +177,7 @@ def article_grounding_map(
 @torch.no_grad()
 def valid_one_epoch(
     val_loader,  # DataLoader of the validation split
-    model,       # the model (not the DistributedDataParallel around it)
+    model,       # the EMA model
     pool_text,   # [4958] headline of every step, in pool order
     device,
 ):

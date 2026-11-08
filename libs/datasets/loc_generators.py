@@ -78,11 +78,21 @@ class PointGenerator(nn.Module):
 
         return BufferList(points_list)
 
-    def forward(self, fpn_strides) -> list[torch.Tensor]:
-        """Points of every level: a list of (max_seq_len / stride, 4) tensors (every video is resampled to
-        max_seq_len steps)."""
+    def forward(self, fpn_strides, feats, is_training) -> list[torch.Tensor]:
+        """Points of every level for feats (C, T): a list of (T / stride, 4) tensors. Training and short videos
+        always use max_seq_len; longer videos at inference are rounded up to a multiple of the largest stride."""
         pts_list = []
-        max_len = self.max_seq_len_ori
+        max_len = feats.shape[1] # T
+        if is_training:
+            max_len = self.max_seq_len_ori
+        else:
+            if max_len <= self.max_seq_len_ori:
+                max_len = self.max_seq_len_ori
+            else:
+                # round up to the nearest multiple of the largest stride
+                stride = self.max_div_factor
+                max_len = (max_len + (stride - 1)) // stride * stride
+
         feat_lens = [int(max_len/stride) for stride in fpn_strides] # [256, 128, 64, 32, 16, 8]
         for feat_len, buffer_pts in zip(feat_lens, self.buffer_points):
             pts = buffer_pts[:feat_len, :]
