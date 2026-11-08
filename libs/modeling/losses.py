@@ -104,7 +104,7 @@ def ctr_diou_loss_1d(
     elif reduction == "sum":
         loss = loss.sum()
 
-    return loss
+    return loss, iouk
 
 
 def omni_distill_loss(

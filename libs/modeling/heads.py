@@ -61,10 +61,8 @@ class EventHead(nn.Module):
 
 
 class EmbedHead(nn.Module):
-    """Two projections of every time step:
-      vis_proj      : the step-caption space (its level-0 output, averaged over a segment, is the segment vector
-                      compared with the step texts)
-      omni_vis_proj : the OmniRetriever space (the omni point head), L2-normalised"""
+    """One L2-normalised vector per time step, in the same space as the projected captions.
+    A second projection puts every step in the OmniRetriever space too (the omni point head)."""
 
     def __init__(
         self,
@@ -89,20 +87,22 @@ class EmbedHead(nn.Module):
         fpn_feats,  # 6 levels, each (B, C, T_l)
         fpn_masks,  # 6 levels, each (B, 1, T_l) bool
     ):
-        """Returns the normalised omni vectors of every step (one tuple entry per level, (B, T_l, 3584)),
-        and the raw step-caption features of level 0 (the finest), (B, D, T0), for the segment vectors."""
-        raw0 = None
+        """Returns the normalised vectors of every step, the normalised omni vectors of every step,
+        and the raw features of level 0 (the finest) for the span averages."""
+        res, raw0 = tuple(), None
         omni_res = tuple()
         for x, m in zip(fpn_feats, fpn_masks):
             for i in range(len(self.head)):
                 x, _ = self.head[i](x, m)
                 x = self.act(self.norm[i](x))
+            x1, _ = self.vis_proj(x, m)
             if raw0 is None:
-                raw0, _ = self.vis_proj(x, m)                   # (B, D, T0)
+                raw0 = x1                                       # (B, D, T0)
+            res += (F.normalize(x1, dim=1).permute(0, 2, 1),)   # (B, T_l, D)
             x2, _ = self.omni_vis_proj(x, m)
             omni_res += (F.normalize(x2, dim=1).permute(0, 2, 1),)   # (B, T_l, 3584)
 
-        return omni_res, raw0
+        return res, omni_res, raw0
 
     def embed_captions(
         self,
@@ -198,6 +198,29 @@ class OmniSpanHead(nn.Module):
         return F.normalize(self.pool(x, masks), dim=-1)                # (N, out_dim)
 
 
+class SegmentContext(nn.Module):
+    def __init__(self, dim: int = 512):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(2 * dim + 2, dim), # span + glob + pos = 512 + 512 + 2
+            nn.GELU(),
+            nn.Linear(dim, dim)
+        )
+        nn.init.zeros_(self.mlp[-1].weight)
+        nn.init.zeros_(self.mlp[-1].bias)
+
+    def forward(
+        self,
+        raw,     # (D, T) level-0 features of one video
+        length,  # real steps of the video
+        segs,    # (N, 2) segments, in steps
+    ):
+        span = span_mean(raw, length, segs)                          # (N, D)
+        glob = raw[:, :length].mean(-1).expand_as(span)              # (N, D)
+        pos = (segs / float(length)).clamp(0, 1)                     # (N, 2)
+        return F.normalize(span + self.mlp(torch.cat((span, glob, pos), -1)), dim=-1) # (N, D)
+
+
 class ArticleCondition(nn.Module):
     def __init__(self, dim, text_dim=512, n_head=8, max_steps=64):
         super().__init__()
@@ -280,7 +303,7 @@ class ArticleHead(nn.Module):
 
 class BoundaryHead(nn.Module):
     """At every step: distances to the start and end of the event holding it (in strides of the level,
-    always >= 0)."""
+    always >= 0), and an IoU-quality logit (how good the segment predicted from this step is, for ranking)."""
 
     def __init__(
         self,
@@ -297,17 +320,21 @@ class BoundaryHead(nn.Module):
         self.scale = nn.ModuleList([Scale() for _ in range(fpn_levels)])
         self.out = MaskedConv1D(feat_dim, 2, ks, stride=1, padding=ks // 2)
         torch.nn.init.constant_(self.out.conv.bias, 1.0)
+        # predicted IoU between the segment from this step and the GT segment, for ranking
+        self.iou_out = MaskedConv1D(feat_dim, 1, ks, stride=1, padding=ks // 2)
 
     def forward(
         self,
         fpn_feats,  # 6 levels, each (B, C, T_l)
         fpn_masks,  # 6 levels, each (B, 1, T_l) bool
     ):
-        res = tuple()
+        res, qual = tuple(), tuple()
         for l, (x, m) in enumerate(zip(fpn_feats, fpn_masks)):
             for i in range(len(self.head)):
                 x, _ = self.head[i](x, m)
                 x = self.act(self.norm[i](x))
+            q, _ = self.iou_out(x, m)
+            qual += (q.permute(0, 2, 1),)                         # (B, T_l, 1)
             o, _ = self.out(x, m)
             res += (F.relu(self.scale[l](o)).permute(0, 2, 1),)  # (B, T_l, 2)
-        return res
+        return res, qual

@@ -50,13 +50,15 @@ cfg = {
         'clip_dim': 512,
         'train_cfg': {
             'loss_weight_reg': 1.0,
+            'loss_weight_iou': 1.0,
+            'loss_weight_emb': 0.2,
             # omni (point head and span head, the same weights for both): KL distillation of the teacher's
             # similarity distribution over the teachers of the batch
             'loss_weight_omni_kd': 0.2,
             # 1 - cos(student, teacher). The KL alone ignores the part every teacher shares (the train mean already
             # has cos 0.80 with a val teacher), so the student would stay far from its teacher
             'loss_weight_omni_cos': 2.0,
-            'omni_temperature': 0.05,      # softmax temperature of the omni KL distillation
+            'omni_temperature': 0.05,      # softmax temperature of the omni KL distillation (0.02 / 0.1: worse)
             'loss_weight_span': 0.2,
             'loss_weight_article': 0.5,
             'cls_prior_prob': 0.01,
@@ -67,6 +69,7 @@ cfg = {
             'score_thresh': 0.05,
             'duration_thresh': 0.05,
             'max_seg_num': 200,     # 200 with nms_sigma 0.75: mAP 25.70 vs 25.27 at (100, 0.5)
+            'iou_power': 0.3,
             'nms_sigma': 0.75,      # 0.75: +0.25 mAP over 0.5 on val_seen (best-mAP checkpoint, 2026-11-01)
             # the step of a segment is picked among the steps of the video's article (given: HT-Step article
             # grounding). True = the article is not given: every step competes,
