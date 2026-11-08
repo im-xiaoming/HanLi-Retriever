@@ -161,29 +161,33 @@ def omni_loss(
         cos : 1 - cosine(student, teacher), pulls the student onto its teacher, shared part included
     """
     dev = omni_em.device
-    teacher_all = torch.stack([x['omni_seg'] for x in video_list]).to(dev)   # (B, 48, 3584)
-    has_teacher = torch.stack([x['omni_ok'] for x in video_list]).to(dev)    # (B, 48)
-    seg_keys = torch.stack([x['seg_key'] for x in video_list]).to(dev)       # (B, 48)
+    # what the dataset gives for every video of the batch, stacked: one row per slot (GT segment)
+    teacher_all = torch.stack([x['omni_seg'] for x in video_list]).to(dev)   # (B, 48, 3584) teacher of every slot
+    has_teacher = torch.stack([x['omni_ok'] for x in video_list]).to(dev)    # (B, 48) True = the slot has one
+    seg_keys = torch.stack([x['seg_key'] for x in video_list]).to(dev)       # (B, 48) unique id of every slot
 
-    # 1. the anchors: every positive point whose GT segment has a teacher vector
-    video_of_point = pos.nonzero(as_tuple=True)[0]          # (N',) video of every positive point
-    slot_of_point = gt_cls[pos].argmax(-1)                  # (N',) GT segment (slot) of every positive point
-    point_has_teacher = has_teacher[video_of_point, slot_of_point]   # (N',)
-    if not point_has_teacher.any():
+    # 1. the anchors: every point that lies inside a GT segment AND whose segment has a teacher vector
+    slot = gt_cls.argmax(-1)                          # (B, P) GT segment (slot) of every point (0 outside any)
+    slot_has_teacher = has_teacher.gather(1, slot)    # (B, P) True = the segment of this point has a teacher
+    is_anchor = pos & slot_has_teacher                # (B, P)
+    if not is_anchor.any():
         zero = omni_em.sum() * 0.0   # no teacher in this batch: zero losses that keep the graph
         return {'nce': zero, 'cos': zero}
 
-    students = omni_em[pos][point_has_teacher]                                     # (N, 3584)
-    anchor_video = video_of_point[point_has_teacher]                               # (N,)
-    anchor_slot = slot_of_point[point_has_teacher]                                 # (N,)
-    teachers = teacher_all[anchor_video, anchor_slot]                              # (N, 3584)
-    anchor_steps = cap_pool[anchor_video, anchor_slot]                             # (N,)
-    anchor_keys = seg_keys[anchor_video, anchor_slot]                              # (N,)
+    # every anchor is described by three numbers: its video, its point, and the slot of its segment
+    anchor_video, anchor_point = is_anchor.nonzero(as_tuple=True)   # (N,), (N,)
+    anchor_slot = slot[anchor_video, anchor_point]                  # (N,)
+
+    students = omni_em[anchor_video, anchor_point]                  # (N, 3584) what the model predicts
+    teachers = teacher_all[anchor_video, anchor_slot]               # (N, 3584) what it should predict
+    anchor_steps = cap_pool[anchor_video, anchor_slot]              # (N,) step of the anchor's segment
+    anchor_keys = seg_keys[anchor_video, anchor_slot]               # (N,) id of the anchor's segment
 
     # 2. the in-batch negatives: every GT segment of the batch that has a teacher vector
-    batch_vectors = teacher_all[has_teacher]                                       # (M, 3584)
-    batch_steps = cap_pool[has_teacher]                                            # (M,)
-    batch_keys = seg_keys[has_teacher]                                             # (M,)
+    #    (the anchor's own segment and the segments of the same step are masked in omni_distill_loss)
+    batch_vectors = teacher_all[has_teacher]                        # (M, 3584)
+    batch_steps = cap_pool[has_teacher]                             # (M,)
+    batch_keys = seg_keys[has_teacher]                              # (M,)
 
     # 3. the loss, against the batch and the candidate bank as it was before this batch
     nce_loss = omni_distill_loss(students, teachers, anchor_steps, anchor_keys,
