@@ -35,7 +35,7 @@ def setup_distributed():
 
 
 def apply_overrides(settings):
-    """--set opt.epochs=8 model.train_cfg.loss_weight_emb=0.5 ... : change cfg entries without editing config.py.
+    """--set opt.epochs=8 model.train_cfg.loss_weight_span=0.5 ... : change cfg entries without editing config.py.
     The key is a dotted path into cfg; the value is a Python literal (True, 0.5, [0.9, 1.0], 'text')."""
     for setting in settings:
         key, value = setting.split('=', 1)
@@ -183,7 +183,7 @@ if __name__ == '__main__':
                                             'Several GPUs: torchrun --nproc_per_node=N train.py')
     p.add_argument('--eval', default='', help='only score this checkpoint, no training')
     p.add_argument('--output', default='', help='run name: checkpoints go to ckpt/<output> (default: config output_folder)')
-    p.add_argument('--set', nargs='+', action='extend', default=[], help='config overrides, e.g. opt.epochs=8 model.train_cfg.loss_weight_emb=0.5')
+    p.add_argument('--set', nargs='+', action='extend', default=[], help='config overrides, e.g. opt.epochs=8 model.train_cfg.loss_weight_span=0.5')
     p.add_argument('--patience', type=int, default=2,
                    help='stop when no watched metric (mAP, ArtAcc, OmniCos) has improved for this many epochs (0 = never)')
     p.add_argument('--min_delta', type=float, default=0.3,

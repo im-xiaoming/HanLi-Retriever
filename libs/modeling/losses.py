@@ -104,38 +104,34 @@ def ctr_diou_loss_1d(
     elif reduction == "sum":
         loss = loss.sum()
 
-    return loss, iouk
+    return loss
 
 
 def omni_distill_loss(
-    students,        # (N, 3584) student vectors, L2-normalised
-    teachers,        # (M, 3584) the teacher vectors of the batch, L2-normalised (the choices)
-    target,          # (N,) for every student, the row of `teachers` that is its own teacher
-    teacher_steps,   # (M,) step of every teacher
-    temperature,     # softmax temperature (0.05)
+    students,      # (N, 3584) student vectors, L2-normalised
+    teachers,      # (M, 3584) the teacher vectors of the batch, L2-normalised
+    target,        # (N,) for every student, the row of `teachers` that is its own teacher
+    temperature,   # softmax temperature (0.05)
 ):
     """Distillation of the OmniRetriever vectors (teachers) into the model (students). Two losses:
 
-    nce : InfoNCE. Every student scores all the teachers of the batch and must give the highest score to its
-          own teacher (cross-entropy with `target` as the right class). Teachers of the same step as the right one
-          are the same action in another segment, not wrong answers: they are left out of that student's choices.
-          This loss learns what tells the segments apart.
+    kd  : KL distillation. Every vector (student or teacher) gets a similarity distribution over the teachers of
+          the batch: softmax(similarities / temperature). The student's distribution must match the one of its own
+          teacher. So the student learns how its segment relates to the other segments, as the teacher sees it
+          (a segment of the same step, similar to its teacher, gets a high probability too).
     cos : 1 - cosine(student, own teacher). Pulls every student onto its teacher, including the part that every
-          teacher shares (the InfoNCE ignores it), so the student vector really is close to the teacher vector.
+          teacher shares (the kd ignores it), so the student vector really is close to the teacher vector.
     """
     if len(students) == 0:   # no segment with a teacher in this batch (very rare): no loss
         zero = students.sum() * 0.0
-        return {'nce': zero, 'cos': zero}
+        return {'kd': zero, 'cos': zero}
 
-    # InfoNCE
-    logits = students @ teachers.t() / temperature                                   # (N, M) score of every choice
-    right_step = teacher_steps[target]                                               # (N,) step of the own teacher
-    same_step = right_step[:, None] == teacher_steps[None, :]                        # (N, M)
-    is_own = torch.arange(len(teachers), device=target.device)[None, :] == target[:, None]   # (N, M)
-    logits = logits.masked_fill(same_step & ~is_own, float('-inf'))
-    nce_loss = F.cross_entropy(logits, target)
-
-    # cosine
     own_teachers = teachers[target]                                                  # (N, 3584)
+
+    student_logits = students @ teachers.t() / temperature                           # (N, M)
+    teacher_logits = own_teachers @ teachers.t() / temperature                       # (N, M)
+    kd_loss = F.kl_div(F.log_softmax(student_logits, dim=-1), F.log_softmax(teacher_logits, dim=-1),
+                       log_target=True, reduction='batchmean')
+
     cos_loss = (1.0 - F.cosine_similarity(students, own_teachers, dim=-1)).mean()
-    return {'nce': nce_loss, 'cos': cos_loss}
+    return {'kd': kd_loss, 'cos': cos_loss}

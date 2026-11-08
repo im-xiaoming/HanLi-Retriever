@@ -7,7 +7,7 @@ from .models import register_multimodal_meta_arch, make_multimodal_backbone
 from .losses import ctr_diou_loss_1d, sigmoid_focal_loss, info_NCE_loss, omni_distill_loss
 from ..utils import batched_nms
 from .heads import (
-    EventHead, BoundaryHead, EmbedHead, SegmentContext, ArticleCondition, ArticleHead, OmniSpanHead
+    EventHead, BoundaryHead, EmbedHead, ArticleCondition, ArticleHead, OmniSpanHead, span_mean
 )
 from ..datasets.helper import preprocessing
 
@@ -63,7 +63,6 @@ class EventCaptionTransformer(nn.Module):
                                        head_num_layers, head_kernel_size, head_with_ln)
         self.embed_head = EmbedHead(D, head_dim, head_num_layers, head_kernel_size,
                                     head_with_ln, clip_dim, omni_head_dim)
-        self.seg_ctx = SegmentContext(head_dim)
         # condition the features on the article's step texts (ActionFormer-T of the HT-Step paper)
         self.article_cond = ArticleCondition(D, clip_dim)
         # predict the video's article from the video, so it needs not be given at inference
@@ -134,13 +133,10 @@ class EventCaptionTransformer(nn.Module):
         ev = torch.cat(self.event_head(feats, msk), dim=1).squeeze(-1)   # (B, P), P = point = 504
 
         # Bounding Head
-        bd, qu = self.bound_head(feats, msk)
-        bd = torch.cat(bd, dim=1)                                        # (B, P, 2)
-        qu = torch.cat(qu, dim=1).squeeze(-1)                            # (B, P)
+        bd = torch.cat(self.bound_head(feats, msk), dim=1)               # (B, P, 2)
 
         # Embedding Head
-        em, omni_em, raw0 = self.embed_head(feats, msk) # tuple((B, T_l, D)), (B, D, T0)
-        em = torch.cat(em, dim=1)                                        # (B, P, D)
+        omni_em, raw0 = self.embed_head(feats, msk) # tuple((B, T_l, 3584)), (B, D, T0)
         omni_em = torch.cat(omni_em, dim=1)                              # (B, P, 3584), normalised
 
         #       (B, 1, T)
@@ -148,8 +144,8 @@ class EventCaptionTransformer(nn.Module):
         #                         (B, T)
         fpn_masks = torch.cat([m.squeeze(1) for m in msk], dim=1)        # (B, P)
         if self.training:
-            return self.losses(video_list, fpn_masks, ev, bd, qu, em, omni_em, raw0, len0, art_logits, feats[0])
-        return self.inference(video_list, fpn_masks, ev, bd, qu, raw0, len0, cands, art_logits, feats[0])
+            return self.losses(video_list, fpn_masks, ev, bd, omni_em, raw0, len0, art_logits, feats[0])
+        return self.inference(video_list, fpn_masks, ev, bd, raw0, len0, cands, art_logits, feats[0])
 
     def losses(
         self,
@@ -157,9 +153,7 @@ class EventCaptionTransformer(nn.Module):
         valid,       # (B, P) bool, True at points of real steps (not padding)
         ev,          # (B, P) event head logits
         bd,          # (B, P, 2) predicted distances to the start / end, in strides
-        qu,          # (B, P) IoU-quality logits
-        em,          # (B, P, D) normalised embedding of every step
-        omni_em,     # (B, P, D)
+        omni_em,     # (B, P, 3584) omni point head: student vector of every point, L2-normalised
         raw0,        # (B, D, T) level-0 features of the embedding head, not normalised (for the span means)
         len0,        # (B,) real level-0 steps of every video
         art_logits,  # (B, A) article head logits
@@ -180,33 +174,23 @@ class EventCaptionTransformer(nn.Module):
         
         # ========================== Regression Loss ====================================
         #                           (N, 2)     (N, 2)
-        rg_loss, iouk = ctr_diou_loss_1d(bd[pos], gt_off[pos], reduction='sum')
+        rg_loss = ctr_diou_loss_1d(bd[pos], gt_off[pos], reduction='sum')
         rg_loss = rg_loss / n_pos
 
         # ============================================= Event Loss ====================================
         #                               (V,)          (V,)
         ev_loss = sigmoid_focal_loss(ev[valid], is_event[valid].float(), reduction='sum') / n_pos
 
-        # ======================================= IoU-quality Loss ===================================
-        iou_loss = F.binary_cross_entropy_with_logits(qu[pos], iouk)
-
-        # ========================================== InfoNCE Loss =======================================
         scale = self.embed_head.logit_scale.exp().clamp(max=100)
-        
-        ri = pos.nonzero(as_tuple=True)[0]
-        gt = cap_pool[ri, gt_cls[pos].argmax(-1)] # (N',)
-        #                                   (N', 512)    (512, N)
-        emb_loss = info_NCE_loss(em[pos], pool_f, gt, scale)
-        #                                       cosin matrix
-        
+
         # <<<<<<<<<<<<<<<< Omni >>>>>>>>>>>>>>
-        omni_point, omni_span = self.omni_losses(video_list, pos, gt_cls, cap_pool, omni_em, feat0, len0)
+        omni_point, omni_span = self.omni_losses(video_list, pos, gt_cls, omni_em, feat0, len0)
 
         # =========================================== Span Loss =========================================
         qs, gs = [], []
         for i, x in enumerate(video_list):
             #                       (D, T)
-            qs.append(self.seg_ctx(raw0[i], int(len0[i]), x['segments'].to(dev).float())) # (M, D)
+            qs.append(F.normalize(span_mean(raw0[i], int(len0[i]), x['segments'].to(dev).float()), dim=-1)) # (M, D)
             gs.append(cap_pool[i, x['labels'].to(dev)]) # (M,)
         #                                   (M, D) x (D, N) = (M, N)
         span_loss = info_NCE_loss(
@@ -220,16 +204,15 @@ class EventCaptionTransformer(nn.Module):
         art_loss = F.cross_entropy(art_logits, torch.as_tensor([x['article'] for x in video_list], device=dev))
 
 
-        total = (ev_loss + w['loss_weight_reg'] * rg_loss + w['loss_weight_iou'] * iou_loss
-                 + w['loss_weight_emb'] * emb_loss
-                 + w['loss_weight_omni_nce'] * omni_point['nce'] + w['loss_weight_omni_cos'] * omni_point['cos']
-                 + w['loss_weight_omni_nce'] * omni_span['nce'] + w['loss_weight_omni_cos'] * omni_span['cos']
+        total = (ev_loss + w['loss_weight_reg'] * rg_loss
+                 + w['loss_weight_omni_kd'] * omni_point['kd'] + w['loss_weight_omni_cos'] * omni_point['cos']
+                 + w['loss_weight_omni_kd'] * omni_span['kd'] + w['loss_weight_omni_cos'] * omni_span['cos']
                  + w['loss_weight_span'] * span_loss
                  + w['loss_weight_article'] * art_loss)
 
-        return {'ev_loss': ev_loss, 'reg_loss': rg_loss, 'iou_loss': iou_loss, 'emb_loss': emb_loss,
-                'omni_point_nce': omni_point['nce'], 'omni_point_cos': omni_point['cos'],
-                'omni_span_nce': omni_span['nce'], 'omni_span_cos': omni_span['cos'], 'span_loss': span_loss,
+        return {'ev_loss': ev_loss, 'reg_loss': rg_loss,
+                'omni_point_kd': omni_point['kd'], 'omni_point_cos': omni_point['cos'],
+                'omni_span_kd': omni_span['kd'], 'omni_span_cos': omni_span['cos'], 'span_loss': span_loss,
                 'art_loss': art_loss, 'final_loss': total}
 
     def omni_losses(
@@ -238,7 +221,6 @@ class EventCaptionTransformer(nn.Module):
                      #          segments / labels = the GT segments left after the crop (labels = their slot)
         pos,         # (B, P) bool, points inside a GT segment
         gt_cls,      # (B, P, 48) one-hot: the GT segment (slot) of every point
-        cap_pool,    # (B, 48) step of every GT segment
         omni_em,     # (B, P, 3584) point head: student vector of every point, L2-normalised
         feat0,       # (B, D, T) level-0 pyramid features, read by the span head
         len0,        # (B,) real level-0 steps of every video
@@ -251,7 +233,7 @@ class EventCaptionTransformer(nn.Module):
            its segment's teacher.
         3. Span head: every GT segment (left after the crop) that has a teacher gets one student vector from the
            span head; its target is the row of its own teacher.
-        Both are trained by omni_distill_loss (InfoNCE among the M teachers + cosine to the own teacher).
+        Both are trained by omni_distill_loss (KL distillation over the M teachers + cosine to the own teacher).
         """
         dev = omni_em.device
         temperature = self.train_cfg['omni_temperature']
@@ -260,7 +242,6 @@ class EventCaptionTransformer(nn.Module):
         omni_seg = torch.stack([x['omni_seg'] for x in video_list]).to(dev)    # (B, 48, 3584)
         omni_ok = torch.stack([x['omni_ok'] for x in video_list]).to(dev)      # (B, 48)
         teachers = omni_seg[omni_ok]                                            # (M, 3584)
-        teacher_steps = cap_pool[omni_ok]                                       # (M,)
         teacher_row = torch.full(omni_ok.shape, -1, dtype=torch.long, device=dev)   # (B, 48)
         teacher_row[omni_ok] = torch.arange(len(teachers), device=dev)
 
@@ -270,7 +251,7 @@ class EventCaptionTransformer(nn.Module):
         target = teacher_row[video, segment]                # (N',) row of its teacher, -1 = no teacher
         keep = target >= 0
         students = omni_em[video[keep], point[keep]]        # (N, 3584)
-        point_losses = omni_distill_loss(students, teachers, target[keep], teacher_steps, temperature)
+        point_losses = omni_distill_loss(students, teachers, target[keep], temperature)
 
         # 3. span head
         span_students, span_target = [], []
@@ -280,8 +261,7 @@ class EventCaptionTransformer(nn.Module):
             segments = x['segments'].to(dev).float()[keep]  # (n', 2) start and end, in level-0 steps
             span_students.append(self.omni_span(feat0[b], int(len0[b]), segments))   # (n', 3584)
             span_target.append(target[keep])
-        span_losses = omni_distill_loss(torch.cat(span_students), teachers, torch.cat(span_target),
-                                        teacher_steps, temperature)
+        span_losses = omni_distill_loss(torch.cat(span_students), teachers, torch.cat(span_target), temperature)
         return point_losses, span_losses
 
     @torch.no_grad()
@@ -305,20 +285,18 @@ class EventCaptionTransformer(nn.Module):
         valid,       # (B, P) bool, True at points of real steps
         ev,          # (B, P) event head logits
         bd,          # (B, P, 2) predicted distances to the start / end, in strides
-        qu,          # (B, P) IoU-quality logits
         raw0,        # (B, D, T) level-0 features of the embedding head (for the segment vectors)
         len0,        # (B,) real level-0 steps of every video
         cands,       # [B] pool rows of every video's article steps (given)
         art_logits,  # (B, A) article head logits
         feat0,       # (B, D, T) level-0 pyramid features (for the omni span head)
     ):
-        """Score of a segment = event score times IoU-quality score. Returns one dict per video:
+        """Score of a segment = event score of the point that predicts it. Returns one dict per video:
         segments (K, 2) in seconds, best first; labels (K,) the step of every segment, label_probs (K,) its
         probability; gt_segments, gt_text the GT steps (seconds) and their captions.
         """
         t = self.test_cfg
-        a = t['iou_power']
-        prob = ev.sigmoid().pow(1 - a) * qu.sigmoid().pow(a) * valid.float() # (B, P)
+        prob = ev.sigmoid() * valid.float() # (B, P)
         pool_f = self.embed_head.embed_captions(self.pool_raw)              # (4958, D)
         scale = self.embed_head.logit_scale.exp().clamp(max=100)
         out = []
@@ -343,7 +321,7 @@ class EventCaptionTransformer(nn.Module):
             
             # vector of the segment = mean over the whole segment, computed while it is still in steps
             #                      (D, T0)
-            span = self.seg_ctx(raw0[b], int(len0[b]), segs.to(raw0.device)) # (N, D)
+            span = F.normalize(span_mean(raw0[b], int(len0[b]), segs.to(raw0.device)), dim=-1) # (N, D)
 
             # step of every segment, among the steps of the article
             # cands: list tensor 1D
