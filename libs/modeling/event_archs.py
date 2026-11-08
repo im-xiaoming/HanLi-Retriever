@@ -38,7 +38,6 @@ class EventCaptionTransformer(nn.Module):
         max_seq_len,         # steps of every video (256)
         nmax=48,             # at most this many GT segments per video
         clip_dim=512,        # size of the step text vectors,
-        backbone_type='convTransformer',  # 'convTransformer', 'convPooler' (TemporalMaxer) or 'dynE' (DyFADet)
         article_cond=False,  # condition the features on the article's step texts (ActionFormer-T)
         article_head=False,  # predict the article from the video; test_cfg['pred_article'] uses it at inference
         article_learned=0,   # article_head only: > 0 = number of articles, each gets a learned vector too
@@ -53,8 +52,10 @@ class EventCaptionTransformer(nn.Module):
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
 
+        # conv + transformer backbone, one stream per modality (TemporalMaxer and DyFADet backbones were tried
+        # and removed: 24.51 and 24.94 mAP vs 25.26, see docs/experiments_report.md)
         self.backbone = make_multimodal_backbone(
-            backbone_type,
+            'convTransformer',
             **{
                 'n_in_V': input_dim_V, 'n_in_A': input_dim_A, 'n_embd': embd_dim, 'n_head': n_head,
                 'n_embd_ks': embd_kernel_size, 'max_len': max_seq_len, 'arch': backbone_arch,

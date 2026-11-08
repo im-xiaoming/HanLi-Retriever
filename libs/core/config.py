@@ -29,9 +29,6 @@ cfg = {
     },
 
     'model': {
-        # 'convTransformer' (self- and cross-attention), 'convPooler' (TemporalMaxer: max-pooling pyramid only) or
-        # 'dynE' (DyFADet encoder layers, video-audio cross-attention kept at the original resolution)
-        'backbone_type': 'convTransformer',
         # condition the pyramid features on the article's step texts (ActionFormer-T of the HT-Step paper)
         'article_cond': True,      # pc_v6: mAP 30.50 with, ~25.5 without (article given)
         # predict the video's article (617 recipes) from the video, so it needs not be given at inference

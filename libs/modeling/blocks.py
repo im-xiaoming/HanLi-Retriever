@@ -335,68 +335,6 @@ class TransformerBlock(nn.Module):
 
         return out, out_mask
 
-class TemporalMaxer(nn.Module):
-    """Max-pooling over time that halves the length, from TemporalMaxer (Tang et al. 2023,
-    https://github.com/TuanTNG/TemporalMaxer): no parameters, replaces a downsampling transformer block."""
-
-    def __init__(self, kernel_size=3, stride=2, padding=1):
-        super().__init__()
-        self.ds_pooling = nn.MaxPool1d(kernel_size, stride=stride, padding=padding)
-        self.stride = stride
-
-    def forward(self, x, mask):
-        # x: (B, C, T); mask: (B, 1, T) bool
-        if self.stride > 1:
-            # downsample the mask with nearest neighbour
-            out_mask = F.interpolate(mask.to(x.dtype), size=x.size(-1) // self.stride, mode='nearest')
-        else:
-            out_mask = mask
-        out = self.ds_pooling(x) * out_mask.to(x.dtype)
-        return out, out_mask.bool()
-
-
-class DynELayer(nn.Module):
-    """Dynamic encoder layer of DyFADet (Yang et al. ECCV 2024, https://github.com/yangle15/DyFADet-pytorch):
-    depthwise convs of two sizes gated by an instant branch and a video-level branch, then a 1x1 MLP.
-    No attention. n_ds_stride > 1 max-pools the input first (halves the length)."""
-
-    def __init__(self, n_embd, kernel_size=1, n_ds_stride=1, k=5, n_hidden=None, path_pdrop=0.0, init_conv_vars=0.0):
-        super().__init__()
-        self.ln = LayerNorm(n_embd)
-        self.gn = nn.GroupNorm(16, n_embd)
-        up_size = round((kernel_size + 1) * k)
-        up_size = up_size + 1 if up_size % 2 == 0 else up_size
-        self.psi = nn.Conv1d(n_embd, n_embd, kernel_size, padding=kernel_size // 2, groups=n_embd)
-        self.convw = nn.Conv1d(n_embd, n_embd, kernel_size, padding=kernel_size // 2, groups=n_embd)
-        self.convkw = nn.Conv1d(n_embd, n_embd, up_size, padding=up_size // 2, groups=n_embd)
-        self.fc = nn.Conv1d(n_embd, n_embd, 1, groups=n_embd)
-        self.global_fc = nn.Conv1d(n_embd, n_embd, 1, groups=n_embd)
-        if n_ds_stride > 1:
-            self.downsample = nn.MaxPool1d(n_ds_stride + 1, stride=n_ds_stride, padding=(n_ds_stride + 1) // 2)
-        else:
-            self.downsample = nn.Identity()
-        self.stride = n_ds_stride
-        n_hidden = n_hidden or 4 * n_embd
-        self.mlp = nn.Sequential(nn.Conv1d(n_embd, n_hidden, 1), nn.GELU(), nn.Conv1d(n_hidden, n_embd, 1))
-        self.drop_path_out = AffineDropPath(n_embd, drop_prob=path_pdrop) if path_pdrop > 0 else nn.Identity()
-        self.drop_path_mlp = AffineDropPath(n_embd, drop_prob=path_pdrop) if path_pdrop > 0 else nn.Identity()
-        for m in (self.psi, self.fc, self.convw, self.convkw, self.global_fc):
-            torch.nn.init.normal_(m.weight, 0, init_conv_vars)
-            torch.nn.init.constant_(m.bias, 0)
-
-    def forward(self, x, mask):
-        # x: (B, C, T); mask: (B, 1, T) bool
-        T = x.shape[-1]
-        x = self.downsample(x)
-        out_mask = F.interpolate(mask.to(x.dtype), size=T // self.stride, mode='nearest').detach()
-        out = self.ln(x)
-        phi = torch.relu(self.global_fc(out.mean(dim=-1, keepdim=True)))   # video-level gate
-        out = self.fc(out) * phi + torch.relu(self.convw(out) + self.convkw(out)) * self.psi(out) + out
-        out = x * out_mask + self.drop_path_out(out)
-        out = out + self.drop_path_mlp(self.mlp(self.gn(out)))
-        return out, out_mask.bool()
-
-
 class Scale(nn.Module):
     """
     Multiply the regression output by a learnable constant
