@@ -1,12 +1,5 @@
-from .blocks import (MaskedConv1D, MaskedMHCA, LayerNorm,
-                     TransformerBlock, Scale, AffineDropPath)
-from .models import (make_multimodal_backbone,
-                     make_multimodal_meta_arch,
-                     )
-from . import multimodal_backbones
-from . import event_archs
+from .models import make_multimodal_meta_arch
+from . import multimodal_backbones   # registers the backbone
+from . import event_archs            # registers the model
 
-__all__ = ['MaskedConv1D', 'MaskedMHCA', 'LayerNorm',
-           'TransformerBlock', 'Scale', 'AffineDropPath',
-           'make_multimodal_backbone',
-           'make_multimodal_meta_arch']
+__all__ = ['make_multimodal_meta_arch']

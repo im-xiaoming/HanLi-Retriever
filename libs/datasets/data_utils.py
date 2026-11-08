@@ -100,7 +100,6 @@ def label_points(
     gt_segments,  # (n, 2) GT segments, in steps
     gt_labels,    # (n,) index of every segment within the video
     num_classes,  # at most this many GT segments per video (48)
-    center_sample_radius: float = 0.0,  # > 0: positive only within this many strides of the centre (ActionFormer)
 ):
         """Training targets of every pyramid point (as in ActionFormer).
 
@@ -130,11 +129,6 @@ def label_points(
 
         # point inside a GT segment
         inside_gt_seg_mask = reg_targets.min(-1)[0] > 0 # (F T, n)
-        if center_sample_radius > 0:
-            # centre sampling: only the points near the segment centre, radius in strides of the point's level
-            ctr = 0.5 * (gt_segs[:, :, 0] + gt_segs[:, :, 1]) # (F T, n)
-            r = center_sample_radius * concat_points[:, 3, None] # (F T, 1)
-            inside_gt_seg_mask &= (concat_points[:, 0, None] - ctr).abs() <= r
 
         # limit the regression range by the level of the point
         max_regress_distance = reg_targets.max(-1)[0] # (F T, n)

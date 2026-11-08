@@ -373,17 +373,6 @@ def drop_path(x, drop_prob=0.0, training=False):
     return output
 
 
-class DropPath(nn.Module):
-    """Drop path (stochastic depth) per sample, on the main path of a residual block."""
-
-    def __init__(self, drop_prob=None):
-        super().__init__()
-        self.drop_prob = drop_prob
-
-    def forward(self, x):
-        return drop_path(x, self.drop_prob, self.training)
-
-
 class AffineDropPath(nn.Module):
     """
     Drop path per sample with a per-channel scale (initialised very small, 1e-4)

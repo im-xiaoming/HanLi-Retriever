@@ -35,7 +35,7 @@ def setup_distributed():
 
 
 def apply_overrides(settings):
-    """--set model.article_head=True opt.epochs=8 ... : change cfg entries without editing config.py.
+    """--set opt.epochs=8 model.train_cfg.loss_weight_emb=0.5 ... : change cfg entries without editing config.py.
     The key is a dotted path into cfg; the value is a Python literal (True, 0.5, [0.9, 1.0], 'text')."""
     for setting in settings:
         key, value = setting.split('=', 1)
@@ -53,12 +53,9 @@ def apply_overrides(settings):
 
 
 def metrics_line(m):
-    """One line with the validation metrics; the ones that are -1 (head not used) are left out."""
-    parts = [f"R@0.5 {m['R@0.5']:.2f}", f"mIoU {m['mIoU']:.2f}", f"Acc {m['Acc']:.2f}", f"mAP {m['mAP']:.2f}"]
-    for name in ['ArtAcc', 'OmniCos', 'OmniCosC', 'OmniR@1']:
-        if m.get(name, -1) >= 0:
-            parts.append(f"{name} {m[name]:.2f}")
-    return '  '.join(parts)
+    """One line with the validation metrics."""
+    names = ['R@0.5', 'mIoU', 'Acc', 'mAP', 'ArtAcc', 'OmniCos', 'OmniCosC', 'OmniR@1']
+    return '  '.join(f"{name} {m[name]:.2f}" for name in names)
 
 
 def main(args):
@@ -106,8 +103,7 @@ def main(args):
         [train_dataset.article_steps[a] for a in train_dataset.articles] # pool rows of every article's steps
     )
     # mean of the train teacher vectors, removed by the OmniCosC metric
-    if model.use_omni:
-        model.omni_teacher_mean = torch.from_numpy(train_dataset.omni_teacher_mean()).to(device)
+    model.omni_teacher_mean = torch.from_numpy(train_dataset.omni_teacher_mean()).to(device)
     # print('Parameters: %.1fM' % (sum(p.numel() for p in model.parameters()) / 1e6))
 
     if args.eval:   # score a checkpoint, no training
@@ -150,8 +146,6 @@ def main(args):
             m = valid_one_epoch(val_loader, model_ema.module, train_dataset.pool_text, device)
             marks = []
             for name in watched:
-                if m[name] < 0:
-                    continue   # metric not available (no article head / no omni head)
                 if m[name] >= best[name][0] + args.min_delta:
                     best[name] = (m[name], epoch)
                     last_improvement = epoch
@@ -189,7 +183,7 @@ if __name__ == '__main__':
                                             'Several GPUs: torchrun --nproc_per_node=N train.py')
     p.add_argument('--eval', default='', help='only score this checkpoint, no training')
     p.add_argument('--output', default='', help='run name: checkpoints go to ckpt/<output> (default: config output_folder)')
-    p.add_argument('--set', nargs='+', action='extend', default=[], help='config overrides, e.g. model.article_head=True opt.epochs=8')
+    p.add_argument('--set', nargs='+', action='extend', default=[], help='config overrides, e.g. opt.epochs=8 model.train_cfg.loss_weight_emb=0.5')
     p.add_argument('--patience', type=int, default=2,
                    help='stop when no watched metric (mAP, ArtAcc, OmniCos) has improved for this many epochs (0 = never)')
     p.add_argument('--min_delta', type=float, default=0.3,

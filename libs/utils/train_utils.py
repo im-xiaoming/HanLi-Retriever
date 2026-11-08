@@ -208,14 +208,12 @@ def valid_one_epoch(
             preds.append((x['video_id'], x['activity'], r['segments'], r['scores'], r['labels'],
                           set(x['cand'].tolist())))
             gt_all.append((x['video_id'], x['activity'], gts, x['gt_steps']))
-            if r['article_pred'] >= 0:
-                art_ok.append(r['article_pred'] == x['article'])
-            if r.get('omni_student') is not None:
-                omni_students.append(r['omni_student'])
-                omni_teachers.append(r['omni_teacher'])
+            art_ok.append(r['article_pred'] == x['article'])
+            omni_students.append(r['omni_student'])
+            omni_teachers.append(r['omni_teacher'])
 
     omni_cos, omni_cos_c, omni_r1 = omni_student_teacher_scores(
-        omni_students, omni_teachers, getattr(model, 'omni_teacher_mean', None))
+        omni_students, omni_teachers, model.omni_teacher_mean)
     best_ious = np.array(best_ious)
     return {'R@0.3': float(100 * np.mean(best_ious >= 0.3)),
             'R@0.5': float(100 * np.mean(best_ious >= 0.5)),
@@ -224,7 +222,7 @@ def valid_one_epoch(
             'CIDEr': cider(gts_txt, hyp) * 100 if hyp else 0.0,
             'Acc': float(100 * np.mean(correct)) if correct else 0.0,
             'mAP': article_grounding_map(preds, gt_all),
-            'ArtAcc': float(100 * np.mean(art_ok)) if art_ok else -1.0,
+            'ArtAcc': float(100 * np.mean(art_ok)),
             'OmniCos': omni_cos,
             'OmniCosC': omni_cos_c,
             'OmniR@1': omni_r1}
@@ -233,7 +231,7 @@ def valid_one_epoch(
 def omni_student_teacher_scores(
     students,      # list of (n, 3584) student vectors of the GT segments, one entry per video, L2-normalised
     teachers,      # list of (n, 3584) teacher (OmniRetriever) vectors of the same segments, L2-normalised
-    teacher_mean,  # (3584,) mean of the train teacher vectors; None = no centred cosine
+    teacher_mean,  # (3584,) mean of the train teacher vectors
 ):
     """Distance between the omni head (student) and OmniRetriever (teacher) on the validation segments.
 
@@ -242,22 +240,15 @@ def omni_student_teacher_scores(
     OmniCosC: the same after subtracting the train teacher mean from both vectors: only what is specific to the
               segment counts (0 = no better than the mean)
     OmniR@1 : share of segments whose own teacher is the closest of all validation teachers to its student
-    Both are -1 without omni head or without teacher vectors.
     """
-    if not students:
-        return -1.0, -1.0, -1.0
     students = torch.cat(students).float()   # (S, 3584)
     teachers = torch.cat(teachers).float()   # (S, 3584)
 
-    own_similarity = (students * teachers).sum(dim=-1)   # (S,) cosine with its own teacher
-    omni_cos = float(100 * own_similarity.mean())
+    cosine = torch.nn.functional.cosine_similarity
+    omni_cos = float(100 * cosine(students, teachers, dim=-1).mean())
 
-    omni_cos_c = -1.0
-    if teacher_mean is not None:
-        mean = teacher_mean.float().cpu()
-        centred_students = torch.nn.functional.normalize(students - mean, dim=-1)
-        centred_teachers = torch.nn.functional.normalize(teachers - mean, dim=-1)
-        omni_cos_c = float(100 * (centred_students * centred_teachers).sum(dim=-1).mean())
+    mean = teacher_mean.float().cpu()
+    omni_cos_c = float(100 * cosine(students - mean, teachers - mean, dim=-1).mean())
 
     # retrieval: compare every student with every teacher, in chunks to keep the memory small
     hits = 0

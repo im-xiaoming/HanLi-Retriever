@@ -108,101 +108,34 @@ def ctr_diou_loss_1d(
 
 
 def omni_distill_loss(
-    students,         # (N, dim) student vector of every positive point, L2-normalised
-    teachers,         # (N, dim) teacher vector of the GT segment of every point, L2-normalised
-    anchor_steps,     # (N,) step of the GT segment of every point
-    anchor_keys,      # (N,) segment id of the GT segment of every point
-    batch_vectors,    # (M, dim) teacher vectors of every GT segment of the batch (the in-batch negatives)
-    batch_steps,      # (M,) their steps
-    batch_keys,       # (M,) their segment ids
-    temperature,      # softmax temperature (0.05)
+    students,        # (N, 3584) student vectors, L2-normalised
+    teachers,        # (M, 3584) the teacher vectors of the batch, L2-normalised (the choices)
+    target,          # (N,) for every student, the row of `teachers` that is its own teacher
+    teacher_steps,   # (M,) step of every teacher
+    temperature,     # softmax temperature (0.05)
 ):
-    """InfoNCE: each student must pick its own teacher among
-        - its own teacher (the positive, column 0),
-        - the teachers of the other segments of the batch (the negatives).
-    The anchor's own segment, and every segment with the same step as the anchor, are masked among the
-    negatives: the first is the positive itself, the second is the same action in another video, not a wrong answer.
-    (A mined bank of extra negatives, 4096 or 60000 of them, did not help: removed.)
+    """Distillation of the OmniRetriever vectors (teachers) into the model (students). Two losses:
+
+    nce : InfoNCE. Every student scores all the teachers of the batch and must give the highest score to its
+          own teacher (cross-entropy with `target` as the right class). Teachers of the same step as the right one
+          are the same action in another segment, not wrong answers: they are left out of that student's choices.
+          This loss learns what tells the segments apart.
+    cos : 1 - cosine(student, own teacher). Pulls every student onto its teacher, including the part that every
+          teacher shares (the InfoNCE ignores it), so the student vector really is close to the teacher vector.
     """
-    # similarity to the positive: (N, 1)
-    positive = F.cosine_similarity(students, teachers, dim=-1).unsqueeze(1)
-
-    negative = students @ batch_vectors.t()                                                     # (N, M)
-    same_segment = anchor_keys[:, None] == batch_keys[None, :]                                   # (N, M)
-    same_step = anchor_steps[:, None] == batch_steps[None, :]                                    # (N, M)
-    negative = negative.masked_fill(same_segment | same_step, float('-inf'))
-
-    logits = torch.cat([positive, negative], dim=1) / temperature                                # (N, 1 + M)
-    target = torch.zeros(len(students), dtype=torch.long, device=students.device)                # column 0
-    return F.cross_entropy(logits, target)
-
-
-def omni_loss(
-    video_list,  # B dicts, one per video (omni_seg, omni_ok, seg_key)
-    pos,         # (B, P) bool, points inside a GT segment
-    gt_cls,      # (B, P, 48) one-hot slot of the GT segment of every point
-    cap_pool,    # (B, 48) step (pool row) of every slot, -1 = empty slot
-    omni_em,     # (B, P, 3584) student vector of every point, L2-normalised
-    temperature, # softmax temperature (0.05)
-):
-    """Distillation of the OmniRetriever segment vectors (teacher) into the omni head (student).
-
-    Returns two losses:
-        nce : InfoNCE, the student must pick its own teacher among the batch segments
-              (learns what tells segments apart, but ignores the part every teacher shares)
-        cos : 1 - cosine(student, teacher), pulls the student onto its teacher, shared part included
-    """
-    dev = omni_em.device
-    teacher_all = torch.stack([x['omni_seg'] for x in video_list]).to(dev)   # (B, 48, 3584)
-    has_teacher = torch.stack([x['omni_ok'] for x in video_list]).to(dev)    # (B, 48)
-    seg_keys = torch.stack([x['seg_key'] for x in video_list]).to(dev)       # (B, 48)
-
-    # 1. the anchors: every positive point whose GT segment has a teacher vector
-    video_of_point = pos.nonzero(as_tuple=True)[0]          # (N',) video of every positive point
-    slot_of_point = gt_cls[pos].argmax(-1)                  # (N',) GT segment (slot) of every positive point
-    point_has_teacher = has_teacher[video_of_point, slot_of_point]   # (N',)
-    if not point_has_teacher.any():
-        zero = omni_em.sum() * 0.0   # no teacher in this batch: zero losses that keep the graph
+    if len(students) == 0:   # no segment with a teacher in this batch (very rare): no loss
+        zero = students.sum() * 0.0
         return {'nce': zero, 'cos': zero}
 
-    #           (N', 3584)
-    students = omni_em[pos][point_has_teacher]                                     # (N, 3584)
-    anchor_video = video_of_point[point_has_teacher]                               # (N,), row
-    anchor_slot = slot_of_point[point_has_teacher]                                 # (N,), index
-    
-    teachers = teacher_all[anchor_video, anchor_slot]                              # (N, 3584)
-    anchor_steps = cap_pool[anchor_video, anchor_slot]                             # (N,)
-    anchor_keys = seg_keys[anchor_video, anchor_slot]                              # (N,)
+    # InfoNCE
+    logits = students @ teachers.t() / temperature                                   # (N, M) score of every choice
+    right_step = teacher_steps[target]                                               # (N,) step of the own teacher
+    same_step = right_step[:, None] == teacher_steps[None, :]                        # (N, M)
+    is_own = torch.arange(len(teachers), device=target.device)[None, :] == target[:, None]   # (N, M)
+    logits = logits.masked_fill(same_step & ~is_own, float('-inf'))
+    nce_loss = F.cross_entropy(logits, target)
 
-    # 2. the in-batch negatives: every GT segment of the batch that has a teacher vector
-    batch_vectors = teacher_all[has_teacher]                                       # (M, 3584)
-    batch_steps = cap_pool[has_teacher]                                            # (M,)
-    batch_keys = seg_keys[has_teacher]                                             # (M,)
-
-    # 3. the contrastive loss, against the segments of the batch
-    nce_loss = omni_distill_loss(students, teachers, anchor_steps, anchor_keys,
-                                 batch_vectors, batch_steps, batch_keys,
-                                 temperature)
-
-    # 4. the direct pull: cosine distance between every student and its own teacher
-    cosine = F.cosine_similarity(students, teachers, dim=-1)   # (N,)
-    cos_loss = (1.0 - cosine).mean()
-    return {'nce': nce_loss, 'cos': cos_loss}
-
-
-def omni_span_loss(
-    students,     # (M, dim) omni span head vector of every GT segment, L2-normalised
-    teachers,     # (M, dim) teacher vector of the same segments, L2-normalised
-    steps,        # (M,) step of every segment
-    keys,         # (M,) segment id of every segment
-    temperature,  # softmax temperature (0.05)
-):
-    """Losses of the omni span head, one anchor per GT segment:
-        nce : InfoNCE, its own teacher against the other segments of the batch (same steps masked)
-        cos : 1 - cosine(student, teacher)
-    """
-    nce_loss = omni_distill_loss(students, teachers, steps, keys,
-                                 teachers, steps, keys,      # in-batch negatives: the teachers of the batch
-                                 temperature)
-    cos_loss = (1.0 - F.cosine_similarity(students, teachers, dim=-1)).mean()
+    # cosine
+    own_teachers = teachers[target]                                                  # (N, 3584)
+    cos_loss = (1.0 - F.cosine_similarity(students, own_teachers, dim=-1)).mean()
     return {'nce': nce_loss, 'cos': cos_loss}

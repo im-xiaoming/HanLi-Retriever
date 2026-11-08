@@ -11,10 +11,7 @@ from torch.nn import functional as F
 from .datasets import register_dataset, make_generator
 from .data_utils import truncate_feats, label_points
 
-from .helper import load_step_vectors, load_omni_segments, load_normalize, filtering
-import logging
-
-logger = logging.getLogger(__name__)
+from .helper import load_step_vectors, load_omni_segments, load_normalize
 
 
 @register_dataset("htstep")
@@ -36,8 +33,6 @@ class HTStepDataset(Dataset):
         scale_factor,     # length ratio between two pyramid levels
         regression_range, # regression range of every pyramid level
         backbone_arch,    # (#conv, #stem, #pyramid branch), gives the number of levels
-        center_sample_radius=0.0,  # > 0: a point is positive only within this many strides of the segment centre
-        train_fraction=1.0,        # training split only: keep this fraction of the videos (learning curves)
         omni_emb_dim=3584
     ):
         self.feat_folder = feat_folder
@@ -48,7 +43,6 @@ class HTStepDataset(Dataset):
         self.trunc_thresh = trunc_thresh
         self.crop_ratio = crop_ratio
         self.num_classes = num_classes
-        self.center_sample_radius = center_sample_radius
         self.omni_emb_dim = omni_emb_dim
         # the train and val_seen omni vectors live in separate folders, so val never leaks into training
         omni_part = 'train' if 'train' in split else 'val'
@@ -76,11 +70,6 @@ class HTStepDataset(Dataset):
 
         # read the annotations, keep the videos of the split
         self.data_list = self._load_json_db(json_file)
-        if is_training and train_fraction < 1.0:
-            # a fixed random subset (same seed every run), to measure how the scores grow with the data
-            rng = np.random.RandomState(0)
-            keep = sorted(rng.choice(len(self.data_list), int(round(train_fraction * len(self.data_list))), replace=False))
-            self.data_list = tuple(self.data_list[i] for i in keep)
 
         # point generator of the pyramid
         self.fpn_strides = [scale_factor**i for i in range(backbone_arch[-1] + 1)] # [1, 2, 4, 8, 16, 32]
@@ -105,35 +94,21 @@ class HTStepDataset(Dataset):
             if value['subset'].lower() not in self.split:
                 continue
             
-            # keep the segments with a positive length, at most num_classes of them;
-            # ann_idx remembers where each kept segment sits in the json list (the omni files use that index)
-            ann_idx = [i for i, a in enumerate(value['annotations']) if a['segment'][1] > a['segment'][0]]
-            ann_idx = ann_idx[:self.num_classes]
-            anns = [value['annotations'][i] for i in ann_idx]
-            if len(anns) == 0:
-                continue
-            
             path = os.path.join(self.feat_folder, key + '.npz')
             if not os.path.exists(path):
-                continue
-            
-            try:
-                with np.load(path) as z:
-                    rows = min(z['k768'].shape[0], z['a768'].shape[0])
-            except Exception as e:
-                logger.exception(f'Excepion error: {e}')
-                continue
-            
-            # one feature row per second: many more rows than the annotated duration means the downloaded video
-            # is another version of it (re-upload, intro added), so the annotated times do not match it
-            duration = value.get('duration')
-            if duration and rows > duration + max(5.0, 0.05 * duration):
-                continue
+                continue   # no features for this video
+            with np.load(path) as z:
+                rows = min(z['k768'].shape[0], z['a768'].shape[0])   # one feature row per second
 
+            # keep the segments that start before the features end (28 of 38957 do not: features cut short);
+            # ann_idx remembers where each kept segment sits in the json list (the omni files use that index)
+            ann_idx = [i for i, a in enumerate(value['annotations']) if a['segment'][0] < rows]
+            if len(ann_idx) == 0:
+                continue
+            anns = [value['annotations'][i] for i in ann_idx]
             segments = np.array([a['segment'] for a in anns], dtype=np.float32) # (N, 2)
-            if segments[:, 0].min() >= rows:
-                continue   # features cut short: every GT step starts after they end
-            
+            segments[:, 1] = np.minimum(segments[:, 1], rows)   # end at most where the features end
+
             steps = np.array([self.step_row[a['id']] for a in anns], dtype=np.int64)
             dict_db += ({'id': key,
                          'fps': self.default_fps,
@@ -160,8 +135,6 @@ class HTStepDataset(Dataset):
             omni_vectors, omni_ok = load_omni_segments(
                 os.path.join(self.omni_folder, video_item['id'] + '.npz'),
                 video_item['ann_slots'],
-                video_item['steps'],
-                self.step_row,
                 self.num_classes,
                 self.omni_emb_dim,
             )
@@ -191,9 +164,6 @@ class HTStepDataset(Dataset):
 
         segments = torch.from_numpy(video_item['segments'] * video_item['fps'] / feat_stride - feat_offset) # (n, 2)
         labels = torch.from_numpy(video_item['labels']) # (n,)
-        
-        if self.is_training:
-            segments, labels = filtering(segments, labels, self.max_seq_len, feat_offset, self.trunc_thresh)
 
         data_dict = {'video_id': vid_id,
                      'feats': {'visual': fv, 'audio': fa},
@@ -212,7 +182,7 @@ class HTStepDataset(Dataset):
         points = self.point_generator(self.fpn_strides, data_dict['feats']['visual'], self.is_training)
 
         data_dict['gt_cls_labels'], data_dict['gt_offsets'] = label_points(
-            points, data_dict['segments'], data_dict['labels'], self.num_classes, self.center_sample_radius)
+            points, data_dict['segments'], data_dict['labels'], self.num_classes)
         data_dict['points'] = points
 
         # step of every GT segment (pool row), padded to num_classes with -1
@@ -226,15 +196,11 @@ class HTStepDataset(Dataset):
         omni_vectors, omni_ok = load_omni_segments(
             os.path.join(self.omni_folder, vid_id + '.npz'),
             video_item['ann_slots'],
-            video_item['steps'],
-            self.step_row,
             self.num_classes,
             self.omni_emb_dim,
         )
         data_dict['omni_seg'] = torch.from_numpy(omni_vectors)   # (48, 3584)
         data_dict['omni_ok'] = torch.from_numpy(omni_ok)         # (48,) True = the slot has a teacher vector
-        # a number unique to every GT segment of the split, so the omni losses can mask an anchor's own segment
-        data_dict['seg_key'] = torch.arange(self.num_classes) + idx * self.num_classes   # (48,)
 
         data_dict['cand'] = torch.from_numpy(video_item['cand'])   # steps of the video's article, ~8
         data_dict['article'] = video_item['article']   # index in self.articles, target of the article head

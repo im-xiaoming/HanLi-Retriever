@@ -62,7 +62,7 @@ class EventHead(nn.Module):
 
 class EmbedHead(nn.Module):
     """One L2-normalised vector per time step, in the same space as the projected captions.
-    With omi_feats_dim > 0 a second projection puts every step in the OmniRetriever caption space too."""
+    A second projection puts every step in the OmniRetriever space too (the omni point head)."""
 
     def __init__(
         self,
@@ -78,9 +78,7 @@ class EmbedHead(nn.Module):
         self.act = nn.ReLU()
         self.head, self.norm = _conv_stack(in_dim, feat_dim, n_layers, ks, with_ln)
         self.vis_proj = MaskedConv1D(feat_dim, feat_dim, ks, stride=1, padding=ks // 2)
-        self.omni_vis_proj = None
-        if omi_feats_dim > 0:
-            self.omni_vis_proj = MaskedConv1D(feat_dim, omi_feats_dim, ks, stride=1, padding=ks // 2)
+        self.omni_vis_proj = MaskedConv1D(feat_dim, omi_feats_dim, ks, stride=1, padding=ks // 2)
         self.clip_proj = Linear(clip_dim, feat_dim) # 512 -> 512 : captions
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
@@ -89,7 +87,7 @@ class EmbedHead(nn.Module):
         fpn_feats,  # 6 levels, each (B, C, T_l)
         fpn_masks,  # 6 levels, each (B, 1, T_l) bool
     ):
-        """Returns the normalised vectors of every step (and of the omni projection, empty without it),
+        """Returns the normalised vectors of every step, the normalised omni vectors of every step,
         and the raw features of level 0 (the finest) for the span averages."""
         res, raw0 = tuple(), None
         omni_res = tuple()
@@ -101,11 +99,9 @@ class EmbedHead(nn.Module):
             if raw0 is None:
                 raw0 = x1                                       # (B, D, T0)
             res += (F.normalize(x1, dim=1).permute(0, 2, 1),)   # (B, T_l, D)
-            
-            if self.omni_vis_proj is not None:
-                x2, _ = self.omni_vis_proj(x, m)
-                omni_res += (F.normalize(x2, dim=1).permute(0, 2, 1),)
-                
+            x2, _ = self.omni_vis_proj(x, m)
+            omni_res += (F.normalize(x2, dim=1).permute(0, 2, 1),)   # (B, T_l, 3584)
+
         return res, omni_res, raw0
 
     def embed_captions(
@@ -115,24 +111,29 @@ class EmbedHead(nn.Module):
         return F.normalize(self.clip_proj(cap), dim=-1) # (N, 512)
 
 
+def segment_masks(
+    length,   # real level-0 steps of the video
+    segs,     # (N, 2) segments (start, end), in level-0 steps
+    T,        # level-0 steps of the padded video
+):
+    """(N, T) bool: the level-0 steps covered by every segment, from floor(start) to ceil(end) included,
+    inside the real steps, at least one step."""
+    lo = segs[:, 0].floor().clamp(min=0, max=length - 1).long()             # (N,) first step
+    hi = segs[:, 1].ceil().long() + 1
+    hi = torch.maximum(hi.clamp(max=length), lo + 1)                        # (N,) one past the last step
+    t = torch.arange(T, device=segs.device)                                 # (T,)
+    return (t[None, :] >= lo[:, None]) & (t[None, :] < hi[:, None])
+
+
 # raw (512, 256) level 0, not normalized
 def span_mean(
     raw,     # (D, T) level-0 features of one video, not normalised
     length,  # real steps (padding excluded) of the video
     segs,    # (N, 2) segments (start, end), in level-0 steps
 ):
-    """Mean of the features over every segment.
-
-    Uses a cumulative sum, so there is no loop over the segments. A segment shorter than one step
-    still takes at least one step.
-    """
-    # pad 1 element on left and 0 element on right
-    cs = F.pad(raw.cumsum(-1), (1, 0), value=0)                         # (D, T+1)
-    lo = segs[:, 0].floor().clamp(min=0, max=length - 1).long() # (N,)
-    hi = segs[:, 1].ceil().long() + 1
-    hi = torch.maximum(hi.clamp(max=length), lo + 1) # (N,)
-    return (cs[:, hi] - cs[:, lo]).t() / (hi - lo).unsqueeze(1).float()   # (N, D)
-
+    """Mean of the features over every segment: (N, D)."""
+    masks = segment_masks(length, segs, raw.shape[1]).to(raw.dtype)         # (N, T)
+    return (masks @ raw.t()) / masks.sum(dim=1, keepdim=True)               # (N, D)
 
 
 class AttentionPool(nn.Module):
@@ -171,19 +172,6 @@ class AttentionPool(nn.Module):
         return self.out(pooled.flatten(1))                             # (N, out_dim)
 
 
-def segment_masks(
-    length,   # real level-0 steps of the video
-    segs,     # (N, 2) segments (start, end), in level-0 steps
-    T,        # level-0 steps of the padded video
-):
-    """(N, T) bool: the level-0 steps covered by every segment (same rounding as span_mean, at least one step)."""
-    lo = segs[:, 0].floor().clamp(min=0, max=length - 1).long()             # (N,)
-    hi = segs[:, 1].ceil().long() + 1
-    hi = torch.maximum(hi.clamp(max=length), lo + 1)                        # (N,) exclusive end
-    t = torch.arange(T, device=segs.device)                                 # (T,)
-    return (t[None, :] >= lo[:, None]) & (t[None, :] < hi[:, None])
-
-
 class OmniSpanHead(nn.Module):
     """Omni vector of a segment given its start and end: learned attention pooling of the level-0 features of
     the segment, then an MLP to the OmniRetriever space (3584), L2-normalised. It is trained against the teacher
@@ -193,8 +181,8 @@ class OmniSpanHead(nn.Module):
         self,
         dim,            # channels of the level-0 features (1024)
         out_dim=3584,   # size of the OmniRetriever vectors
-        n_queries=4,
-        hidden=2048,
+        n_queries=8,    # learned queries of the attention pooling
+        hidden=4096,    # hidden size of the MLP
     ):
         super().__init__()
         self.pool = AttentionPool(dim, out_dim, n_queries, hidden)
@@ -275,7 +263,7 @@ class ArticleHead(nn.Module):
         dim,               # channels of the level-0 features
         head_dim,          # size of the video and article vectors
         text_dim=512,      # size of the step text vectors
-        num_articles=0,    # > 0: every article also gets its own learned vector, added to its text vector
+        num_articles=617,  # every article also gets its own learned vector, added to its text vector
     ):
         super().__init__()
         self.vid = nn.Sequential(
@@ -287,9 +275,7 @@ class ArticleHead(nn.Module):
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
         # learned part of every article vector. It starts at 0, so at first an article is its text only; with
         # ~9 train videos per article it can learn what the text does not tell apart (similar dishes)
-        self.article_learned = None
-        if num_articles > 0:
-            self.article_learned = nn.Parameter(torch.zeros(num_articles, head_dim))
+        self.article_learned = nn.Parameter(torch.zeros(num_articles, head_dim))
 
     def pool(
         self,
@@ -310,10 +296,7 @@ class ArticleHead(nn.Module):
     ):
         v = F.normalize(self.vid(self.pool(f, m)), dim=-1)              # (B, head_dim) mean + max, then MLP
 
-        t = self.txt(art_txt)                                            # (A, head_dim)
-        if self.article_learned is not None:
-            t = t + self.article_learned
-        t = F.normalize(t, dim=-1)
+        t = F.normalize(self.txt(art_txt) + self.article_learned, dim=-1)   # (A, head_dim)
 
         return self.logit_scale.exp().clamp(max=100) * v @ t.t()         # (B, A)
 
