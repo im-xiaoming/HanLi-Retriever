@@ -10,7 +10,6 @@ from .heads import (
     EventHead, BoundaryHead, EmbedHead, SegmentContext, ArticleCondition, ArticleHead, span_mean,
     OmniSpanHead
 )
-from .omni_bank import OmniCandidateBank
 from ..datasets.helper import preprocessing
 
 
@@ -76,17 +75,12 @@ class EventCaptionTransformer(nn.Module):
         if article_head:
             self.article_head = ArticleHead(D, head_dim, clip_dim, article_learned)
 
-        # omni head: every point inside a GT segment learns the OmniRetriever vector of that segment (teacher),
-        # against the other segments of the batch and a mined list of candidates (see omni_bank.py)
+        # omni head: every point inside a GT segment learns the OmniRetriever vector of that segment (teacher).
         self.use_omni = omni_head_dim > 0
-        self.omni_bank = None
-        # omni span head: the omni vector of a GT segment (start, end given) by learned attention pooling,
-        # trained against the teacher of the segment; without it a segment vector is the mean of the point vectors
+        # omni span head: the omni vector of a GT segment (start, end given) by learned attention pooling.
         self.omni_span = None
         if self.use_omni and omni_span_head:
             self.omni_span = OmniSpanHead(D, omni_head_dim, pool_queries, omni_span_hidden)
-        if self.use_omni:
-            self.omni_bank = OmniCandidateBank(train_cfg.get('omni_bank_size', 4096), omni_head_dim)
         # mean of the train teacher vectors (the part every segment shares), for the OmniCosC metric; set by train.py
         self.omni_teacher_mean = None
 
@@ -235,7 +229,7 @@ class EventCaptionTransformer(nn.Module):
             omni_span_cos = span_losses['cos']
         if self.use_omni:
             omni_losses = omni_loss(video_list, pos, gt_cls, cap_pool, omni_em,
-                                    self.omni_bank, self.train_cfg.get('omni_temperature', 0.05))
+                                    self.train_cfg.get('omni_temperature', 0.05))
             omni_emb_loss = omni_losses['nce']
             omni_cos_loss = omni_losses['cos']
 
@@ -297,7 +291,7 @@ class EventCaptionTransformer(nn.Module):
             zero = feat0.sum() * 0.0
             return {'nce': zero, 'cos': zero}
         return omni_span_loss(torch.cat(students), torch.cat(teachers), torch.cat(steps), torch.cat(keys),
-                              self.omni_bank, self.train_cfg.get('omni_temperature', 0.05))
+                              self.train_cfg.get('omni_temperature', 0.05))
 
     @torch.no_grad()
     def omni_eval(

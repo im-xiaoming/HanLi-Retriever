@@ -80,9 +80,8 @@ when none of mAP, ArtAcc and OmniCos has improved by at least `--min_delta` (0.3
 
 The omni head distils OmniRetriever: every point inside a GT segment learns the OmniRetriever `encode_av` vector of
 that segment (`datasets/omni_av_feats/train|val/<id>.npz`, one 3584-d row per segment). The loss is an InfoNCE whose
-negatives are the other segments of the batch plus a list of candidates (`libs/modeling/omni_bank.py`): every step
-adds the batch segments, and when the list is full the weakest candidates (least similar to any student) are
-dropped. Negatives of the same step as the anchor are masked. Validation reports OmniCos (mean cosine between the
+negatives are the other segments of the batch (a mined bank of extra negatives did not help and was removed).
+Negatives of the same step as the anchor are masked. Validation reports OmniCos (mean cosine between the
 student and the teacher of every val segment) and OmniR@1 (own teacher is the nearest of all val teachers).
 `model.omni_head_dim=0` turns the head off.
 

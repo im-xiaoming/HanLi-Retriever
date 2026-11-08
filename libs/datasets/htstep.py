@@ -233,7 +233,7 @@ class HTStepDataset(Dataset):
         )
         data_dict['omni_seg'] = torch.from_numpy(omni_vectors)   # (48, 3584)
         data_dict['omni_ok'] = torch.from_numpy(omni_ok)         # (48,) True = the slot has a teacher vector
-        # a number unique to every GT segment of the split, so the candidate bank can skip duplicates
+        # a number unique to every GT segment of the split, so the omni losses can mask an anchor's own segment
         data_dict['seg_key'] = torch.arange(self.num_classes) + idx * self.num_classes   # (48,)
 
         data_dict['cand'] = torch.from_numpy(video_item['cand'])   # steps of the video's article, ~8
