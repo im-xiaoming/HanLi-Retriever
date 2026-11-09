@@ -126,43 +126,34 @@ def segment_masks(
     return (t[None, :] >= lo[:, None]) & (t[None, :] < hi[:, None]) # (N, T)
 
 
-# raw (512, 256) level 0, not normalized
-def span_mean(
-    raw,     # (D, T) level-0 features of one video, not normalised
-    length,  # real steps (padding excluded) of the video
-    segs,    # (N, 2) segments (start, end), in level-0 steps
-):
-    """Mean of the features over every segment: (N, D)."""
-    masks = segment_masks(length, segs, raw.shape[1]).to(raw.dtype)         # (N, T)
-    #         (N, T) @ (T, D)
-    return (masks @ raw.t()) / masks.sum(dim=1, keepdim=True)               # (N, D)
-
-
 class AttentionPool(nn.Module):
     """Learned compression of a set of vectors into one vector (instead of a plain mean).
 
     Attention with learned queries: Q query vectors (parameters) attend to the T input vectors of the set
     (keys = values = the inputs). Every query gives a weighted mean of the inputs, so it can focus on the vectors
     that matter (e.g. the frames where the action is visible). The Q results are concatenated and an MLP maps them
-    to the output size.
+    to the output size; with out_dim=None there is no MLP: the output is the Q weighted means themselves
+    (N, Q * dim), in the space of the inputs.
     """
 
     def __init__(
         self,
         dim,            # size of every input vector
-        out_dim,        # size of the output vector
-        n_queries=4,    # learned queries (each one looks for something different)
+        out_dim,        # size of the output vector; None = no output MLP
+        n_queries,      # learned queries (each one looks for something different)
         hidden=2048,    # hidden size of the output MLP
     ):
         super().__init__()
         # small at the start: every score is ~0, so every query starts as the plain mean of the set
         self.queries = nn.Parameter(0.02 * torch.randn(n_queries, dim))   # (Q, dim)
-        self.out = nn.Sequential(
-            nn.LayerNorm(n_queries * dim),
-            nn.Linear(n_queries * dim, hidden),
-            nn.GELU(),
-            nn.Linear(hidden, out_dim),
-        )
+        self.out = nn.Identity()
+        if out_dim is not None:
+            self.out = nn.Sequential(
+                nn.LayerNorm(n_queries * dim),
+                nn.Linear(n_queries * dim, hidden),
+                nn.GELU(),
+                nn.Linear(hidden, out_dim),
+            )
 
     def forward(
         self,
@@ -214,6 +205,9 @@ class OmniSpanHead(nn.Module):
 class SegmentContext(nn.Module):
     def __init__(self, dim: int = 512):
         super().__init__()
+        # vector of the segment: one learned query over its level-0 features, no MLP, so it stays in the space of
+        # the features (it starts as their plain mean)
+        self.pool = AttentionPool(dim, out_dim=None, n_queries=1)
         self.mlp = nn.Sequential(
             nn.Linear(2 * dim + 2, dim), # span + glob + pos = 512 + 512 + 2
             nn.GELU(),
@@ -228,7 +222,9 @@ class SegmentContext(nn.Module):
         length,  # real steps of the video
         segs,    # (N, 2) segments, in steps
     ):
-        span = span_mean(raw, length, segs)                          # (N, D)
+        masks = segment_masks(length, segs, raw.shape[1])            # (N, T)
+        x = raw.t()[None].expand(len(segs), -1, -1)                  # (N, T, D) the same video for every segment
+        span = self.pool(x, masks)                                   # (N, D)
         glob = raw[:, :length].mean(-1).expand_as(span)              # (N, D)
         pos = (segs / float(length)).clamp(0, 1)                     # (N, 2)
         return F.normalize(span + self.mlp(torch.cat((span, glob, pos), -1)), dim=-1) # (N, D)
