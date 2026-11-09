@@ -31,6 +31,8 @@ cfg = {
         'num_articles': 617,
         'pool_queries': 8,          # omni span head: learned queries of its attention pooling
         'omni_span_hidden': 4096,   # hidden size of the omni span head MLP
+        'seg_pool_queries': 1,      # SegmentContext: learned queries of its attention pooling
+        'seg_pool_hidden': 0,       # SegmentContext: hidden size of the pooling MLP; 0 = no MLP (only with 1 query)
         'backbone_arch': [2, 3, 5],
         'scale_factor': 2,
         'input_dim_V': 768,

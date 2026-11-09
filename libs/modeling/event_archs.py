@@ -6,7 +6,7 @@ from .models import register_multimodal_meta_arch, make_multimodal_backbone
 from .losses import ctr_diou_loss_1d, sigmoid_focal_loss, info_NCE_loss, omni_distill_loss
 from ..utils import batched_nms
 from .heads import (
-    EventHead, BoundaryHead, EmbedHead, SegmentContext, ArticleCondition, ArticleHead, OmniSpanHead
+    EventHead, BoundaryHead, EmbedHead, SegmentContext, ArticleCondition, ArticleHead, AttentionPool
 )
 from ..datasets.helper import preprocessing
 
@@ -37,6 +37,8 @@ class EventCaptionTransformer(nn.Module):
         clip_dim=512,        # size of the step text vectors,
         pool_queries=8,      # omni span head: learned queries of its attention pooling
         omni_span_hidden=4096,  # hidden size of the omni span head MLP
+        seg_pool_queries=1,  # SegmentContext: learned queries of its attention pooling
+        seg_pool_hidden=0,   # SegmentContext: hidden size of the pooling MLP; 0 = no MLP (only with 1 query)
     ):
         super().__init__()
         self.fpn_strides = [scale_factor ** i for i in range(backbone_arch[-1] + 1)] # [1, 2, 4, 8, 16, 32]
@@ -62,7 +64,7 @@ class EventCaptionTransformer(nn.Module):
                                        head_num_layers, head_kernel_size, head_with_ln)
         self.embed_head = EmbedHead(D, head_dim, head_num_layers, head_kernel_size,
                                     head_with_ln, clip_dim, omni_head_dim)
-        self.seg_ctx = SegmentContext(head_dim)
+        self.seg_ctx = SegmentContext(head_dim, seg_pool_queries, seg_pool_hidden)
         # condition the features on the article's step texts (ActionFormer-T of the HT-Step paper)
         self.article_cond = ArticleCondition(D, clip_dim)
         # predict the video's article from the video, so it needs not be given at inference
@@ -70,8 +72,9 @@ class EventCaptionTransformer(nn.Module):
 
         # omni: the model learns the OmniRetriever vector (teacher) of every GT segment, twice:
         #   - point head (in embed_head): every point inside a GT segment predicts the vector of its segment
-        #   - span head: given the start and end of a segment, one vector for the whole segment
-        self.omni_span = OmniSpanHead(D, omni_head_dim, pool_queries, omni_span_hidden)
+        #   - span head: given the start and end of a segment, one vector for the whole segment (attention pooling
+        #     of the level-0 features of the segment + an MLP to the OmniRetriever space, L2-normalised where used)
+        self.omni_span = AttentionPool(D, omni_head_dim, pool_queries, omni_span_hidden)
         # mean of the train teacher vectors (the part every segment shares), for the OmniCosC metric; set by train.py
         self.omni_teacher_mean = None
 
@@ -275,7 +278,7 @@ class EventCaptionTransformer(nn.Module):
             target = teacher_row[b, x['labels'].to(dev)]    # (n,) row of the teacher of every GT segment left
             keep = target >= 0
             segments = x['segments'].to(dev).float()[keep]  # (n', 2) start and end, in level-0 steps
-            span_students.append(self.omni_span(feat0[b], int(len0[b]), segments))   # (n', 3584)
+            span_students.append(F.normalize(self.omni_span(feat0[b], int(len0[b]), segments), dim=-1))   # (n', 3584)
             span_target.append(target[keep])
         span_losses = omni_distill_loss(torch.cat(span_students), teachers, torch.cat(span_target), temperature)
         return point_losses, span_losses
@@ -290,7 +293,7 @@ class EventCaptionTransformer(nn.Module):
         """Span head vs teacher on every GT segment of the video that has a teacher (start and end given)."""
         has_teacher = video['omni_ok'][video['labels']]                          # (n,)
         segments = video['segments'][has_teacher].to(feat0.device).float()       # (n', 2) in steps
-        students = self.omni_span(feat0, length, segments)                        # (n', 3584)
+        students = F.normalize(self.omni_span(feat0, length, segments), dim=-1)    # (n', 3584)
         teachers = video['omni_seg'][video['labels']][has_teacher]                # (n', 3584)
         return students.cpu(), teachers.cpu()
 
