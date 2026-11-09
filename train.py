@@ -109,8 +109,11 @@ def main(args):
     if args.eval:   # score a checkpoint, no training
         if is_main:
             model.load_state_dict(torch.load(args.eval, map_location=device)['state_dict'])
-            m = valid_one_epoch(val_loader, model, train_dataset.pool_text, device)
+            pred_csv = args.eval.removesuffix('.pth.tar') + '_val_seen.csv'   # for tools/eval_htstep.py
+            m = valid_one_epoch(val_loader, model, train_dataset.pool_text, device,
+                                pool_ids=train_dataset.pool_ids, pred_csv=pred_csv)
             print(f"{args.eval}: {metrics_line(m)}", flush=True)
+            print(f"predictions -> {pred_csv} (official metrics: python tools/eval_htstep.py {pred_csv})")
         if world_size > 1:
             dist.destroy_process_group()
         return

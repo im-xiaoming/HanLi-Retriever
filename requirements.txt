@@ -3,6 +3,8 @@ torch==2.14.1
 numpy
 # data tools (tools/)
 huggingface_hub
+pandas          # tools/eval_htstep.py (official HT-Step evaluation)
+joblib
 transformers    # tools/iv2_text.py
 timm            # tools/pipeline/extract_features.py (InternVideo2 model code)
 einops

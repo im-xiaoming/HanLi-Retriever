@@ -174,12 +174,28 @@ def article_grounding_map(
     return 100 * float(np.mean(aps)) if aps else 0.0
 
 
+def write_predictions_csv(
+    preds,     # per video: (video_id, activity, segments (K, 2) in s, scores (K,), steps (K,) pool rows, cand)
+    pool_ids,  # global_step_index of every pool row
+    path,
+):
+    """Predictions in the format of the official HT-Step evaluation (video-id,t-start,t-end,label,score),
+    label = global_step_index. Scored by tools/eval_htstep.py."""
+    with open(path, 'w') as f:
+        f.write('video-id,t-start,t-end,label,score\n')
+        for video_id, _, segs, scores, steps, _ in preds:
+            for (s, e), score, step in zip(segs.tolist(), scores.tolist(), steps.tolist()):
+                f.write(f'{video_id},{s:.3f},{e:.3f},{pool_ids[step]},{score:.6f}\n')
+
+
 @torch.no_grad()
 def valid_one_epoch(
     val_loader,  # DataLoader of the validation split
     model,       # the EMA model
     pool_text,   # [4958] headline of every step, in pool order
     device,
+    pool_ids=None,   # [4958] global_step_index of every pool row, needed by pred_csv
+    pred_csv='',     # if given, the predictions are also written there, in the official HT-Step format
 ):
     model.eval()
     best_ious, correct = [], []
@@ -212,6 +228,8 @@ def valid_one_epoch(
             omni_students.append(r['omni_student'])
             omni_teachers.append(r['omni_teacher'])
 
+    if pred_csv:
+        write_predictions_csv(preds, pool_ids, pred_csv)
     omni_cos, omni_cos_c, omni_r1 = omni_student_teacher_scores(
         omni_students, omni_teachers, model.omni_teacher_mean)
     best_ious = np.array(best_ious)
