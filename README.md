@@ -15,6 +15,20 @@ cosine to the OmniRetriever `encode_av` vector of each segment).
 
 Details: [docs/htstep_report.md](docs/htstep_report.md), every run: [docs/experiments_report.md](docs/experiments_report.md).
 
+## Features
+
+| Input | Model | Settings | Output (HF) |
+|---|---|---|---|
+| Video `k768` | InternVideo2-Stage1-1B K710→K400 f16 (`1B_ft_k710_ft_k400_f16.pth`) | 4 fps, 16-frame window (~4 s, second *i* = frames 4i−7..4i+8), 224×224 squashed, pooled vector before the K400 classifier | (n_sec, 768) fp16, 1 row/s: `htstep-feats-k400`, `htstep-val-seen-feats` |
+| Audio `a768` | BEATs of InternVideo2-Stage2-6B-Audio (`audio_6b.pth`) | 16 kHz mono, 3 s around each second, zeros if no audio | (n_sec, 768) fp16, same files |
+| Step text | InternVideo2-Stage2-1B f4 text encoder (BERT-large, first 19 layers, [CLS] → `text_proj`) | `"<activity>: <headline>"` for the 4958 steps, centred on their mean | (4958, 512): `htstep-text-feats/text_feats/step_emb_iv2j.npz` |
+| Omni AV teacher | OmniRetriever `encode_av`: WAVE-7B (`nguyenminh04/omni-model`) + HT-Step LoRA (`nguyenminh04/omni-adapters`), bf16 | one vector per GT segment [start, end]: 8 frames uniform (224 px), audio of the same window (16 kHz, 8 s, centre crop / zero pad), prompt "Please describe the video." | (n_seg, 3584) fp16, L2-normalised: `htstep-omni-av`, `htstep-val-seen-feats/omni_av/` |
+
+Scripts:
+- video + audio: `tools/pipeline/extract_features.py` (default `--model k400_f16`);
+- step text: `python tools/htstep_data.py build`;
+- omni AV: `scripts/extract_htstep_av.py` of [Omni-fix](https://github.com/im-xiaoming/Omni-fix) (branch `htstep-av-extract`).
+
 ## Run
 
 1. Install (Python 3.13, PyTorch 2.14):
