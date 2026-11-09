@@ -27,7 +27,7 @@ Details: [docs/htstep_report.md](docs/htstep_report.md), every run: [docs/experi
 Scripts:
 - video + audio: `tools/pipeline/extract_features.py` (default `--model k400_f16`);
 - step text: `python tools/htstep_data.py build`;
-- omni AV: `scripts/extract_htstep_av.py` of [Omni-fix](https://github.com/im-xiaoming/Omni-fix) (branch `htstep-av-extract`).
+- omni AV: `scripts/extract_htstep_av.py` of [Omni-Retriever-Custom](https://github.com/im-xiaoming/Omni-Retriever-Custom) (branch `htstep-av-extract`).
 
 ## Run
 
