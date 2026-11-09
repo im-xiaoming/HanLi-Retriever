@@ -35,7 +35,8 @@ Details: [docs/htstep_report.md](docs/htstep_report.md), every run: [docs/experi
        python train.py --output NAME --set opt.epochs=8  # other output folder, override a parameter
        python train.py --eval ckpt/htstep/model_best.pth.tar
 
-   On Colab: `bash tools/colab_train.sh` (setup + data + train).
+   On Colab (from `/content`): `BRANCH=main bash colab_train.sh setup` (code + data, ~10 min), then
+   `bash colab_train.sh train NAME`.
 
 All parameters are in `libs/core/config.py`. Training is deterministic (same code, data and seed give the same
 numbers); about 12 epochs, ~45 min on an A100.

@@ -122,7 +122,8 @@ def segment_masks(
     hi = segs[:, 1].ceil().long() + 1
     hi = torch.maximum(hi.clamp(max=length), lo + 1)                        # (N,) one past the last step
     t = torch.arange(T, device=segs.device)                                 # (T,)
-    return (t[None, :] >= lo[:, None]) & (t[None, :] < hi[:, None])
+    #           (1, T)      (N, 1)         (1, T)       (N, 1)
+    return (t[None, :] >= lo[:, None]) & (t[None, :] < hi[:, None]) # (N, T)
 
 
 # raw (512, 256) level 0, not normalized
@@ -133,6 +134,7 @@ def span_mean(
 ):
     """Mean of the features over every segment: (N, D)."""
     masks = segment_masks(length, segs, raw.shape[1]).to(raw.dtype)         # (N, T)
+    #         (N, T) @ (T, D)
     return (masks @ raw.t()) / masks.sum(dim=1, keepdim=True)               # (N, D)
 
 
