@@ -1,0 +1,156 @@
+{
+ "host": "DESKTOP-8PSQBN9",
+ "gpu": "NVIDIA GeForce RTX 3060",
+ "gpus": 1,
+ "started": "20261101-083327",
+ "finished": null,
+ "git": {
+  "commit": "99a8390",
+  "branch": "htstep-ov",
+  "dirty": true
+ },
+ "argv": [
+  "/tmp/claude-1000/-home-minh-projects-UniAV/f9244139-c157-44e5-85d8-3d35364d4851/scratchpad/diag/run_exp.py",
+  "./ckpt/htstep_a_qfl",
+  "model.article_cond=True",
+  "model.train_cfg.ev_target='iou'"
+ ],
+ "config": {
+  "output_folder": "./ckpt/htstep_a_qfl",
+  "init_rand_seed": 1234567891,
+  "num_workers": 2,
+  "batch_size": 32,
+  "dataset": {
+   "json_file": "./data/htstep/data/annotations.json",
+   "taxonomy_file": "./data/htstep/data/taxonomy.csv",
+   "step_emb_file": "./data/htstep/step_emb_iv2j.npz",
+   "omni_emb_file": "",
+   "feat_folder": "./data/htstep/k400_feats",
+   "video_key": "k768",
+   "default_fps": 16,
+   "max_seq_len": 256,
+   "trunc_thresh": 0.5,
+   "crop_ratio": [
+    0.9,
+    1.0
+   ],
+   "num_classes": 48,
+   "center_sample_radius": 0.0
+  },
+  "model": {
+   "backbone_type": "convTransformer",
+   "article_cond": true,
+   "backbone_arch": [
+    2,
+    3,
+    5
+   ],
+   "scale_factor": 2,
+   "input_dim_V": 768,
+   "input_dim_A": 768,
+   "n_head": 4,
+   "embd_kernel_size": 3,
+   "embd_dim": 512,
+   "embd_with_ln": true,
+   "head_dim": 512,
+   "omni_head_dim": 0,
+   "audio_text": false,
+   "regression_range": [
+    [
+     0,
+     4
+    ],
+    [
+     4,
+     8
+    ],
+    [
+     8,
+     16
+    ],
+    [
+     16,
+     32
+    ],
+    [
+     32,
+     64
+    ],
+    [
+     64,
+     10000
+    ]
+   ],
+   "head_num_layers": 3,
+   "head_kernel_size": 3,
+   "head_with_ln": true,
+   "use_abs_pe": true,
+   "max_seq_len": 256,
+   "nmax": 48,
+   "clip_dim": 512,
+   "train_cfg": {
+    "loss_weight_reg": 1.0,
+    "loss_weight_iou": 1.0,
+    "loss_weight_emb": 0.2,
+    "loss_weight_omni_emb": 0.2,
+    "loss_weight_span": 0.2,
+    "loss_weight_audio": 0.2,
+    "ev_target": "iou",
+    "cls_prior_prob": 0.01,
+    "dropout": 0.0,
+    "droppath": 0.1
+   },
+   "test_cfg": {
+    "score_thresh": 0.05,
+    "duration_thresh": 0.05,
+    "max_seg_num": 200,
+    "iou_power": 0.3,
+    "nms_sigma": 0.75,
+    "article": true,
+    "av_power": 0.5
+   }
+  },
+  "train_cfg": {
+   "clip_grad_l2norm": 1.0,
+   "ema_decay": 0.999
+  },
+  "opt": {
+   "learning_rate": 0.0003,
+   "clip_proj_lr": 0.003,
+   "weight_decay": 0.0001,
+   "epochs": 10,
+   "warmup_epochs": 2
+  }
+ },
+ "history": [
+  {
+   "epoch": 1,
+   "seconds": 147.1,
+   "R@0.3": 38.672142368240934,
+   "R@0.5": 24.60643394934976,
+   "R@0.7": 12.628336755646819,
+   "mIoU": 28.157573257564444,
+   "CIDEr": 332.3821666811993,
+   "Acc": 34.60176991150443,
+   "mAP": 17.954813335892304,
+   "ev_loss": 0.4213890816768011,
+   "reg_loss": 0.41162759939829496,
+   "iou_loss": 0.6626396119594574,
+   "emb_loss": 6.090286879539487,
+   "omni_emb_loss": 0.0,
+   "span_loss": 6.057284021377561,
+   "audio_loss": 0.0,
+   "final_loss": 3.92517052014669
+  }
+ ],
+ "best": {
+  "mAP": {
+   "value": 17.954813335892304,
+   "epoch": 1
+  },
+  "CIDEr": {
+   "value": 332.3821666811993,
+   "epoch": 1
+  }
+ }
+}

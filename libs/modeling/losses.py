@@ -135,3 +135,54 @@ def omni_distill_loss(
 
     cos_loss = (1.0 - F.cosine_similarity(students, own_teachers, dim=-1)).mean()
     return {'kd': kd_loss, 'cos': cos_loss}
+
+
+
+def omni_losses(
+    span,
+    video_list,  # B dicts: omni_seg (48, 3584) teacher of every GT segment, omni_ok (48,) True = it has one,
+                    #          segments / labels = the GT segments left after the crop (labels = their slot)
+    pos,         # (B, P) bool, points inside a GT segment
+    gt_cls,      # (B, P, 48) one-hot: the GT segment (slot) of every point
+    omni_em,     # (B, P, 3584) point head: student vector of every point, L2-normalised
+    feat0,       # (B, D, T) level-0 pyramid features, read by the span head
+    len0,        # (B,) real level-0 steps of every video
+    temperature=0.05,
+):
+    """Distillation of the OmniRetriever vectors (teachers), for the point head and the span head.
+
+    1. The teachers of the batch: every GT segment that has a teacher vector, put in one list (M rows).
+        teacher_row[b, s] remembers where segment s of video b sits in that list (-1: no teacher).
+    2. Point head: every point inside a GT segment that has a teacher is a student; its target is the row of
+        its segment's teacher.
+    3. Span head: every GT segment (left after the crop) that has a teacher gets one student vector from the
+        span head; its target is the row of its own teacher.
+    Both are trained by omni_distill_loss (KL distillation over the M teachers + cosine to the own teacher).
+    """
+    dev = omni_em.device
+
+    # 1. the teachers of the batch
+    omni_seg = torch.stack([x['omni_seg'] for x in video_list]).to(dev)    # (B, 48, 3584)
+    omni_ok = torch.stack([x['omni_ok'] for x in video_list]).to(dev)      # (B, 48)
+    teachers = omni_seg[omni_ok]                                            # (M, 3584)
+    teacher_row = torch.full(omni_ok.shape, -1, dtype=torch.long, device=dev)   # (B, 48)
+    teacher_row[omni_ok] = torch.arange(len(teachers), device=dev)
+
+    # 2. point head
+    video, point = pos.nonzero(as_tuple=True)          # (N',) video and point of every point inside a segment
+    segment = gt_cls[video, point].argmax(-1)           # (N',) the GT segment (slot) the point lies in
+    target = teacher_row[video, segment]                # (N',) row of its teacher, -1 = no teacher
+    keep = target >= 0
+    students = omni_em[video[keep], point[keep]]        # (N, 3584)
+    point_losses = omni_distill_loss(students, teachers, target[keep], temperature)
+
+    # 3. span head
+    span_students, span_target = [], []
+    for b, x in enumerate(video_list):
+        target = teacher_row[b, x['labels'].to(dev)]    # (n,) row of the teacher of every GT segment left
+        keep = target >= 0
+        segments = x['segments'].to(dev).float()[keep]  # (n', 2) start and end, in level-0 steps
+        span_students.append(span(feat0[b], int(len0[b]), segments))   # (n', 3584)
+        span_target.append(target[keep])
+    span_losses = omni_distill_loss(torch.cat(span_students), teachers, torch.cat(span_target), temperature)
+    return point_losses, span_losses

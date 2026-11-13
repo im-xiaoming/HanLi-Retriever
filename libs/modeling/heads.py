@@ -141,9 +141,10 @@ def span_mean(
 class AttentionPool(nn.Module):
     """Learned compression of a set of vectors into one vector (instead of a plain mean).
 
-    n_queries learned queries each score every input vector; each query takes the softmax-weighted sum of the
-    inputs (so it can focus on the vectors that matter, e.g. the frames where the action is visible). The query
-    outputs are concatenated and an MLP maps them to the output size.
+    Attention with learned queries: Q query vectors (parameters) attend to the T input vectors of the set
+    (keys = values = the inputs). Every query gives a weighted mean of the inputs, so it can focus on the vectors
+    that matter (e.g. the frames where the action is visible). The Q results are concatenated and an MLP maps them
+    to the output size.
     """
 
     def __init__(
@@ -154,7 +155,8 @@ class AttentionPool(nn.Module):
         hidden=2048,    # hidden size of the output MLP
     ):
         super().__init__()
-        self.score = nn.Linear(dim, n_queries)          # one score per (vector, query)
+        # small at the start: every score is ~0, so every query starts as the plain mean of the set
+        self.queries = nn.Parameter(0.02 * torch.randn(n_queries, dim))   # (Q, dim)
         self.out = nn.Sequential(
             nn.LayerNorm(n_queries * dim),
             nn.Linear(n_queries * dim, hidden),
@@ -167,11 +169,20 @@ class AttentionPool(nn.Module):
         x,     # (N, T, dim) N sets of T vectors
         mask,  # (N, T) bool, True = this vector belongs to the set (at least one True per row)
     ):
-        scores = self.score(x)                                         # (N, T, Q)
-        scores = scores.masked_fill(~mask[:, :, None], float('-inf'))
-        weights = scores.softmax(dim=1)                                # (N, T, Q), sums to 1 over T
-        pooled = torch.einsum('ntq,ntd->nqd', weights, x)              # (N, Q, dim)
-        return self.out(pooled.flatten(1))                             # (N, out_dim)
+        dim = x.shape[-1]
+        keys = x                                                      # (N, T, dim)
+        values = x                                                    # (N, T, dim)
+
+        # score of query q for input t: dot(query q, key t) / sqrt(dim), as in standard attention
+        #                 (Q, dim)       (N, dim, T)
+        scores = self.queries @ keys.transpose(1, 2) / dim ** 0.5     # (N, Q, T)
+        scores = scores.masked_fill(~mask[:, None, :], float('-inf')) # inputs outside the set get weight 0
+        weights = scores.softmax(dim=-1)                              # (N, Q, T), sums to 1 over T
+
+        # every query: weighted mean of the inputs
+        #          (N, Q, T) @ (N, T, dim)
+        pooled = weights @ values                                     # (N, Q, dim)
+        return self.out(pooled.flatten(1))                            # (N, Q * dim) -> (N, out_dim)
 
 
 class OmniSpanHead(nn.Module):
