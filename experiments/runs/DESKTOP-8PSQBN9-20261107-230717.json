@@ -1,0 +1,192 @@
+{
+ "host": "DESKTOP-8PSQBN9",
+ "gpu": "NVIDIA GeForce RTX 3060",
+ "gpus": 1,
+ "started": "20261107-230717",
+ "finished": null,
+ "git": {
+  "commit": "e7b7742",
+  "branch": "htstep-omni-distill",
+  "dirty": true
+ },
+ "argv": [
+  "train.py",
+  "--output",
+  "pc_v4",
+  "--set",
+  "model.article_head=True",
+  "model.article_learned=617",
+  "model.train_cfg.loss_weight_omni_cos=2.0",
+  "model.article_cond=True",
+  "model.omni_span_head=True",
+  "model.article_attention_pool=True",
+  "num_workers=6"
+ ],
+ "config": {
+  "output_folder": "./ckpt/pc_v4",
+  "init_rand_seed": 1234567891,
+  "num_workers": 6,
+  "batch_size": 32,
+  "dataset": {
+   "json_file": "./datasets/annotations.json",
+   "taxonomy_file": "./datasets/taxonomy.csv",
+   "step_emb_file": "./datasets/step_emb_iv2j.npz",
+   "omni_emb_folder": "./datasets/omni_av_feats",
+   "feat_folder": "./datasets/k400_feats",
+   "default_fps": 16,
+   "max_seq_len": 256,
+   "trunc_thresh": 0.5,
+   "crop_ratio": [
+    0.9,
+    1.0
+   ],
+   "num_classes": 48,
+   "center_sample_radius": 0.0,
+   "omni_emb_dim": 3584,
+   "train_fraction": 1.0
+  },
+  "model": {
+   "backbone_type": "convTransformer",
+   "article_cond": true,
+   "article_head": true,
+   "article_learned": 617,
+   "article_all_levels": false,
+   "article_attention_pool": true,
+   "omni_span_head": true,
+   "backbone_arch": [
+    2,
+    3,
+    5
+   ],
+   "scale_factor": 2,
+   "input_dim_V": 768,
+   "input_dim_A": 768,
+   "n_head": 4,
+   "embd_kernel_size": 3,
+   "embd_dim": 512,
+   "embd_with_ln": true,
+   "head_dim": 512,
+   "omni_head_dim": 3584,
+   "regression_range": [
+    [
+     0,
+     4
+    ],
+    [
+     4,
+     8
+    ],
+    [
+     8,
+     16
+    ],
+    [
+     16,
+     32
+    ],
+    [
+     32,
+     64
+    ],
+    [
+     64,
+     10000
+    ]
+   ],
+   "head_num_layers": 3,
+   "head_kernel_size": 3,
+   "head_with_ln": true,
+   "use_abs_pe": true,
+   "max_seq_len": 256,
+   "nmax": 48,
+   "clip_dim": 512,
+   "train_cfg": {
+    "loss_weight_reg": 1.0,
+    "loss_weight_iou": 1.0,
+    "loss_weight_emb": 0.2,
+    "loss_weight_omni_emb": 0.2,
+    "omni_bank_size": 4096,
+    "omni_temperature": 0.05,
+    "loss_weight_omni_cos": 2.0,
+    "loss_weight_omni_span_nce": 0.2,
+    "loss_weight_omni_span_cos": 2.0,
+    "loss_weight_span": 0.2,
+    "loss_weight_article": 0.5,
+    "article_detach": false,
+    "article_label_smoothing": 0.0,
+    "article_crop_min": 1.0,
+    "cls_prior_prob": 0.01,
+    "dropout": 0.0,
+    "droppath": 0.1
+   },
+   "test_cfg": {
+    "score_thresh": 0.05,
+    "duration_thresh": 0.05,
+    "max_seg_num": 200,
+    "iou_power": 0.3,
+    "nms_sigma": 0.75,
+    "article": true,
+    "pred_article": false,
+    "pred_article_topk": 1,
+    "article_soft": false,
+    "article_soft_weight": 0.5
+   }
+  },
+  "train_cfg": {
+   "clip_grad_l2norm": 1.0,
+   "ema_decay": 0.999
+  },
+  "opt": {
+   "learning_rate": 0.0003,
+   "clip_proj_lr": 0.003,
+   "weight_decay": 0.0001,
+   "epochs": 10,
+   "warmup_epochs": 2
+  }
+ },
+ "history": [
+  {
+   "epoch": 1,
+   "seconds": 228.3,
+   "R@0.3": 38.8628762541806,
+   "R@0.5": 24.983277591973245,
+   "R@0.7": 12.608695652173912,
+   "mIoU": 28.53112730932235,
+   "CIDEr": 368.3979203097178,
+   "Acc": 38.2960413080895,
+   "mAP": 17.965323006384377,
+   "ArtAcc": 21.372549019607842,
+   "OmniCos": 83.22505950927734,
+   "OmniCosC": 56.0481071472168,
+   "OmniR@1": 27.87037037037037,
+   "ArtAcc_step": 70.3921568627451,
+   "ArtAcc_omni": 26.862745098039216,
+   "ArtAcc_fused": 60.19607843137255,
+   "ev_loss": 0.41894603565911565,
+   "reg_loss": 0.40760364469902294,
+   "iou_loss": 0.6593126038820042,
+   "emb_loss": 5.8723586382786905,
+   "omni_emb_loss": 7.407625635684525,
+   "omni_cos_loss": 0.34570076073730843,
+   "omni_span_nce": 6.670602039737595,
+   "omni_span_cos": 0.3012045884494623,
+   "span_loss": 5.832659809628906,
+   "art_loss": 4.894695126549316,
+   "final_loss": 10.383669813693555
+  }
+ ],
+ "best": {
+  "mAP": {
+   "value": 17.965323006384377,
+   "epoch": 1
+  },
+  "ArtAcc_fused": {
+   "value": 60.19607843137255,
+   "epoch": 1
+  },
+  "OmniCos": {
+   "value": 83.22505950927734,
+   "epoch": 1
+  }
+ }
+}

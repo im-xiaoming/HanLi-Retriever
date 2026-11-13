@@ -1,0 +1,265 @@
+{
+ "host": "DESKTOP-8PSQBN9",
+ "gpu": "NVIDIA GeForce RTX 3060",
+ "gpus": 1,
+ "started": "20261107-225225",
+ "finished": null,
+ "git": {
+  "commit": "85efcca",
+  "branch": "htstep-omni-distill",
+  "dirty": true
+ },
+ "argv": [
+  "train.py",
+  "--output",
+  "pc_crop03",
+  "--set",
+  "model.article_head=True",
+  "model.article_learned=617",
+  "model.train_cfg.loss_weight_omni_cos=2.0",
+  "model.train_cfg.article_crop_min=0.3",
+  "num_workers=6"
+ ],
+ "config": {
+  "output_folder": "./ckpt/pc_crop03",
+  "init_rand_seed": 1234567891,
+  "num_workers": 6,
+  "batch_size": 32,
+  "dataset": {
+   "json_file": "./datasets/annotations.json",
+   "taxonomy_file": "./datasets/taxonomy.csv",
+   "step_emb_file": "./datasets/step_emb_iv2j.npz",
+   "omni_emb_folder": "./datasets/omni_av_feats",
+   "feat_folder": "./datasets/k400_feats",
+   "default_fps": 16,
+   "max_seq_len": 256,
+   "trunc_thresh": 0.5,
+   "crop_ratio": [
+    0.9,
+    1.0
+   ],
+   "num_classes": 48,
+   "center_sample_radius": 0.0,
+   "omni_emb_dim": 3584,
+   "train_fraction": 1.0
+  },
+  "model": {
+   "backbone_type": "convTransformer",
+   "article_cond": false,
+   "article_head": true,
+   "article_learned": 617,
+   "article_all_levels": false,
+   "backbone_arch": [
+    2,
+    3,
+    5
+   ],
+   "scale_factor": 2,
+   "input_dim_V": 768,
+   "input_dim_A": 768,
+   "n_head": 4,
+   "embd_kernel_size": 3,
+   "embd_dim": 512,
+   "embd_with_ln": true,
+   "head_dim": 512,
+   "omni_head_dim": 3584,
+   "regression_range": [
+    [
+     0,
+     4
+    ],
+    [
+     4,
+     8
+    ],
+    [
+     8,
+     16
+    ],
+    [
+     16,
+     32
+    ],
+    [
+     32,
+     64
+    ],
+    [
+     64,
+     10000
+    ]
+   ],
+   "head_num_layers": 3,
+   "head_kernel_size": 3,
+   "head_with_ln": true,
+   "use_abs_pe": true,
+   "max_seq_len": 256,
+   "nmax": 48,
+   "clip_dim": 512,
+   "train_cfg": {
+    "loss_weight_reg": 1.0,
+    "loss_weight_iou": 1.0,
+    "loss_weight_emb": 0.2,
+    "loss_weight_omni_emb": 0.2,
+    "omni_bank_size": 4096,
+    "omni_temperature": 0.05,
+    "loss_weight_omni_cos": 2.0,
+    "loss_weight_span": 0.2,
+    "loss_weight_article": 0.5,
+    "article_detach": false,
+    "article_label_smoothing": 0.0,
+    "article_crop_min": 0.3,
+    "cls_prior_prob": 0.01,
+    "dropout": 0.0,
+    "droppath": 0.1
+   },
+   "test_cfg": {
+    "score_thresh": 0.05,
+    "duration_thresh": 0.05,
+    "max_seg_num": 200,
+    "iou_power": 0.3,
+    "nms_sigma": 0.75,
+    "article": true,
+    "pred_article": false,
+    "pred_article_topk": 1,
+    "article_soft": false,
+    "article_soft_weight": 0.5
+   }
+  },
+  "train_cfg": {
+   "clip_grad_l2norm": 1.0,
+   "ema_decay": 0.999
+  },
+  "opt": {
+   "learning_rate": 0.0003,
+   "clip_proj_lr": 0.003,
+   "weight_decay": 0.0001,
+   "epochs": 10,
+   "warmup_epochs": 2
+  }
+ },
+ "history": [
+  {
+   "epoch": 1,
+   "seconds": 195.9,
+   "R@0.3": 38.561872909699,
+   "R@0.5": 25.28428093645485,
+   "R@0.7": 12.107023411371237,
+   "mIoU": 28.29150859918448,
+   "CIDEr": 327.49009497479136,
+   "Acc": 33.47788378143972,
+   "mAP": 18.13913825918325,
+   "ArtAcc": 15.88235294117647,
+   "OmniCos": 81.62702941894531,
+   "OmniCosC": 44.16796112060547,
+   "OmniR@1": 6.851851851851852,
+   "ArtAcc_step": 7.0588235294117645,
+   "ArtAcc_omni": 11.76470588235294,
+   "ArtAcc_fused": 13.92156862745098,
+   "ev_loss": 0.4206745945616976,
+   "reg_loss": 0.40825498828571793,
+   "iou_loss": 0.6598811310957811,
+   "emb_loss": 7.341669298667275,
+   "omni_emb_loss": 7.42571518566068,
+   "omni_cos_loss": 0.34463184009928743,
+   "span_loss": 7.324197732282609,
+   "art_loss": 5.320218740905845,
+   "final_loss": 9.256500336346702
+  },
+  {
+   "epoch": 2,
+   "seconds": 191.0,
+   "R@0.3": 41.37123745819398,
+   "R@0.5": 28.528428093645488,
+   "R@0.7": 15.719063545150503,
+   "mIoU": 30.192191901456656,
+   "CIDEr": 406.5430043606214,
+   "Acc": 42.44139046079224,
+   "mAP": 20.69040677776877,
+   "ArtAcc": 37.254901960784316,
+   "OmniCos": 84.5247573852539,
+   "OmniCosC": 57.48797607421875,
+   "OmniR@1": 20.833333333333332,
+   "ArtAcc_step": 17.45098039215686,
+   "ArtAcc_omni": 26.666666666666668,
+   "ArtAcc_fused": 28.823529411764703,
+   "ev_loss": 0.36447040432065886,
+   "reg_loss": 0.3606131411059786,
+   "iou_loss": 0.6330273220552263,
+   "emb_loss": 5.808810621335363,
+   "omni_emb_loss": 5.716059358080446,
+   "omni_cos_loss": 0.18437034179821862,
+   "span_loss": 5.791466952687467,
+   "art_loss": 3.2813695623071157,
+   "final_loss": 6.830803797389923
+  },
+  {
+   "epoch": 3,
+   "seconds": 193.8,
+   "R@0.3": 41.03678929765886,
+   "R@0.5": 29.130434782608695,
+   "R@0.7": 17.25752508361204,
+   "mIoU": 30.14428526880045,
+   "CIDEr": 450.3702245836296,
+   "Acc": 46.536267318663405,
+   "mAP": 22.253312524500668,
+   "ArtAcc": 42.94117647058823,
+   "OmniCos": 85.19403076171875,
+   "OmniCosC": 61.93417739868164,
+   "OmniR@1": 27.037037037037038,
+   "ArtAcc_step": 23.72549019607843,
+   "ArtAcc_omni": 31.56862745098039,
+   "ArtAcc_fused": 38.03921568627451,
+   "ev_loss": 0.35753716026221855,
+   "reg_loss": 0.3406526825046012,
+   "iou_loss": 0.6157777388451506,
+   "emb_loss": 5.0700442856846575,
+   "omni_emb_loss": 5.077835072469973,
+   "omni_cos_loss": 0.1703923014481423,
+   "span_loss": 5.044639528127005,
+   "art_loss": 2.4047819705299225,
+   "final_loss": 5.895646993626548
+  },
+  {
+   "epoch": 4,
+   "seconds": 191.2,
+   "R@0.3": 41.97324414715719,
+   "R@0.5": 30.468227424749163,
+   "R@0.7": 17.926421404682273,
+   "mIoU": 31.24390043171015,
+   "CIDEr": 463.6806542134953,
+   "Acc": 48.12749003984064,
+   "mAP": 23.119184147949916,
+   "ArtAcc": 49.6078431372549,
+   "OmniCos": 85.48344421386719,
+   "OmniCosC": 64.10350799560547,
+   "OmniR@1": 33.24074074074074,
+   "ArtAcc_step": 26.27450980392157,
+   "ArtAcc_omni": 37.450980392156865,
+   "ArtAcc_fused": 42.94117647058823,
+   "ev_loss": 0.34983613905985705,
+   "reg_loss": 0.3246156691846269,
+   "iou_loss": 0.6008563535648156,
+   "emb_loss": 4.379590679927425,
+   "omni_emb_loss": 4.685725881249867,
+   "omni_cos_loss": 0.1636685231772574,
+   "span_loss": 4.331335248209496,
+   "art_loss": 1.7929722676619646,
+   "final_loss": 5.17846173871288
+  }
+ ],
+ "best": {
+  "mAP": {
+   "value": 23.119184147949916,
+   "epoch": 4
+  },
+  "ArtAcc_fused": {
+   "value": 42.94117647058823,
+   "epoch": 4
+  },
+  "OmniCos": {
+   "value": 85.19403076171875,
+   "epoch": 3
+  }
+ }
+}

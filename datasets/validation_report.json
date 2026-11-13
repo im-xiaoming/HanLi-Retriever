@@ -1,0 +1,77 @@
+{
+ "counts": {
+  "train: annotated": 17472,
+  "train: k400 file": 5826,
+  "train: omni file": 5465,
+  "train: k400 + omni": 5465,
+  "val_seen: annotated": 600,
+  "val_seen: k400 file": 510,
+  "val_seen: omni file": 179,
+  "val_seen: k400 + omni": 179,
+  "train: k400 with problems": 20,
+  "train: omni covers only part of the segments": 25,
+  "train: k400 without omni (no omni loss)": 361
+ },
+ "problems": {
+  "-6hxNGausyc": [
+   "k400: 445 rows for a 309 s video"
+  ],
+  "0xXiq7sig7E": [
+   "k400: 581 rows for a 299 s video"
+  ],
+  "4EkWakI3JyE": [
+   "k400: 140 rows for a 652 s video"
+  ],
+  "5aHaT1fJOqY": [
+   "k400: 248 rows for a 272 s video"
+  ],
+  "86env-alFVk": [
+   "k400: 525 rows for a 391 s video"
+  ],
+  "EmTyqj8IHCc": [
+   "k400: 466 rows for a 341 s video"
+  ],
+  "GJU8NXeZvUk": [
+   "k400: 985 rows for a 461 s video"
+  ],
+  "GO0VI2UXvjw": [
+   "k400: 254 rows for a 268 s video"
+  ],
+  "Kc-xtkqt4ls": [
+   "k400: 286 rows for a 463 s video"
+  ],
+  "LMIJEUGTEyc": [
+   "k400: 81 rows for a 130 s video"
+  ],
+  "QoiuyhwWP2A": [
+   "k400: 141 rows for a 150 s video"
+  ],
+  "SHmhdh8JuKo": [
+   "k400: 1158 rows for a 1232 s video"
+  ],
+  "SmKACpokugA": [
+   "k400: 400 rows for a 262 s video"
+  ],
+  "UsstE41cnaU": [
+   "k400: 210 rows for a 262 s video"
+  ],
+  "Wk1e25_Rq0k": [
+   "k400: 91 rows for a 110 s video"
+  ],
+  "WpZwRVXEJB8": [
+   "k400: 440 rows for a 509 s video"
+  ],
+  "d8lHUHNYZLQ": [
+   "k400: 208 rows for a 196 s video"
+  ],
+  "favFf9rqfm4": [
+   "k400: 54 rows for a 147 s video"
+  ],
+  "fgVlVxkoEhs": [
+   "k400: 203 rows for a 298 s video"
+  ],
+  "wT6pcNaEhxA": [
+   "k400: 106 rows for a 120 s video"
+  ]
+ }
+}

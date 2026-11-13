@@ -1,0 +1,5 @@
+chunk,plan,n_videos,ok,failed,retry,failed_page_reload,video_shard,video_gb,in_manifest,feats_shard,feats_mb,status,fetched_by,claims
+4004,plan_retry2,100,89,11,0,0,videos/htstep_videos_4004.tar,2.22,True,,,downloaded,r2,r2
+4022,plan_retry2,100,85,15,0,0,videos/htstep_videos_4022.tar,2.29,True,,,downloaded,r3,r3
+4002,plan_retry2,100,80,20,0,0,videos/htstep_videos_4002.tar,1.87,True,,,downloaded,r1,r1 r2
+3049,plan_full,100,90,10,0,0,videos/htstep_videos_3049.tar,2.08,True,,,downloaded,pc3,pc3

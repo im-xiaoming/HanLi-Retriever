@@ -1,0 +1,3 @@
+chunk,plan,n_videos,ok,failed,retry,failed_page_reload,video_shard,video_gb,in_manifest,feats_shard,feats_mb,status,fetched_by,claims
+3074,plan_full,100,86,14,0,0,videos/htstep_videos_3074.tar,2.4,True,,,downloaded,pc2,pc2
+3095,plan_full,100,88,12,0,0,videos/htstep_videos_3095.tar,2.12,True,,,downloaded,pc3,pc3

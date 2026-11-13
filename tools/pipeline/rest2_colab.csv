@@ -1,0 +1,8 @@
+chunk,plan,n_videos,ok,failed,retry,failed_page_reload,video_shard,video_gb,in_manifest,feats_shard,feats_mb,status,fetched_by,claims
+4018,plan_retry2,100,88,12,0,0,videos/htstep_videos_4018.tar,2.03,True,,,downloaded,r2,r2
+4020,plan_retry2,100,85,15,0,0,videos/htstep_videos_4020.tar,1.98,True,,,downloaded,r1,r1
+4026,plan_retry2,100,91,9,0,0,videos/htstep_videos_4026.tar,2.33,True,,,downloaded,r3,r3
+3035,plan_full,100,30,70,0,0,videos/htstep_videos_3035.tar,0.75,True,,,downloaded,pc3,pc3
+3055,plan_full,100,80,20,0,0,videos/htstep_videos_3055.tar,2.05,True,,,downloaded,pc2,pc2
+3086,plan_full,100,85,15,0,0,videos/htstep_videos_3086.tar,2.03,True,,,downloaded,pc2,pc2
+3103,plan_full,100,92,8,0,0,videos/htstep_videos_3103.tar,2.16,True,,,downloaded,pc3,pc3

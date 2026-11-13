@@ -1,0 +1,284 @@
+{
+ "host": "DESKTOP-8PSQBN9",
+ "gpu": "NVIDIA GeForce RTX 3060",
+ "gpus": 1,
+ "started": "20261031-223155",
+ "finished": null,
+ "git": {
+  "commit": "99a8390",
+  "branch": "htstep-ov",
+  "dirty": true
+ },
+ "argv": [
+  "train.py",
+  "--patience",
+  "3"
+ ],
+ "config": {
+  "output_folder": "./ckpt/htstep",
+  "init_rand_seed": 1234567891,
+  "num_workers": 2,
+  "batch_size": 32,
+  "dataset": {
+   "json_file": "./data/htstep/data/annotations.json",
+   "taxonomy_file": "./data/htstep/data/taxonomy.csv",
+   "step_emb_file": "./data/htstep/step_emb_iv2j.npz",
+   "omni_emb_file": "",
+   "feat_folder": "./data/htstep/k400_feats",
+   "video_key": "k768",
+   "default_fps": 16,
+   "max_seq_len": 256,
+   "trunc_thresh": 0.5,
+   "crop_ratio": [
+    0.9,
+    1.0
+   ],
+   "num_classes": 48
+  },
+  "model": {
+   "backbone_arch": [
+    2,
+    3,
+    5
+   ],
+   "scale_factor": 2,
+   "input_dim_V": 768,
+   "input_dim_A": 768,
+   "n_head": 4,
+   "embd_kernel_size": 3,
+   "embd_dim": 512,
+   "embd_with_ln": true,
+   "head_dim": 512,
+   "omni_head_dim": 0,
+   "audio_text": false,
+   "regression_range": [
+    [
+     0,
+     4
+    ],
+    [
+     4,
+     8
+    ],
+    [
+     8,
+     16
+    ],
+    [
+     16,
+     32
+    ],
+    [
+     32,
+     64
+    ],
+    [
+     64,
+     10000
+    ]
+   ],
+   "head_num_layers": 3,
+   "head_kernel_size": 3,
+   "head_with_ln": true,
+   "use_abs_pe": true,
+   "max_seq_len": 256,
+   "nmax": 48,
+   "clip_dim": 512,
+   "train_cfg": {
+    "loss_weight_reg": 1.0,
+    "loss_weight_iou": 1.0,
+    "loss_weight_emb": 0.2,
+    "loss_weight_omni_emb": 0.2,
+    "loss_weight_span": 0.2,
+    "loss_weight_audio": 0.2,
+    "cls_prior_prob": 0.01,
+    "dropout": 0.0,
+    "droppath": 0.1
+   },
+   "test_cfg": {
+    "score_thresh": 0.05,
+    "duration_thresh": 0.05,
+    "max_seg_num": 100,
+    "iou_power": 0.3,
+    "nms_sigma": 0.5,
+    "article": true,
+    "av_power": 0.5
+   }
+  },
+  "train_cfg": {
+   "clip_grad_l2norm": 1.0,
+   "ema_decay": 0.999
+  },
+  "opt": {
+   "learning_rate": 0.0003,
+   "clip_proj_lr": 0.003,
+   "weight_decay": 0.0001,
+   "epochs": 10,
+   "warmup_epochs": 2
+  }
+ },
+ "history": [
+  {
+   "epoch": 1,
+   "seconds": 125.4,
+   "R@0.3": 38.84325804243669,
+   "R@0.5": 24.366872005475702,
+   "R@0.7": 11.806981519507186,
+   "mIoU": 27.948721607170317,
+   "CIDEr": 353.1794913534101,
+   "Acc": 36.0352422907489,
+   "mAP": 17.46946519096762,
+   "ev_loss": 0.42557489951451627,
+   "reg_loss": 0.4120675603548689,
+   "iou_loss": 0.6626116387049358,
+   "emb_loss": 7.396963914235432,
+   "omni_emb_loss": 0.0,
+   "span_loss": 7.376826324462896,
+   "audio_loss": 0.0,
+   "final_loss": 4.455012205441795
+  },
+  {
+   "epoch": 2,
+   "seconds": 124.7,
+   "R@0.3": 41.30732375085558,
+   "R@0.5": 29.22655715263518,
+   "R@0.7": 16.290212183436005,
+   "mIoU": 30.228841829612428,
+   "CIDEr": 396.2280563774118,
+   "Acc": 40.76222038111019,
+   "mAP": 20.74586949944186,
+   "ev_loss": 0.3649579771359761,
+   "reg_loss": 0.3603072305520376,
+   "iou_loss": 0.6324190366268155,
+   "emb_loss": 6.142028884887695,
+   "omni_emb_loss": 0.0,
+   "span_loss": 6.129291785558064,
+   "audio_loss": 0.0,
+   "final_loss": 3.8119484361012765
+  },
+  {
+   "epoch": 3,
+   "seconds": 124.8,
+   "R@0.3": 41.9917864476386,
+   "R@0.5": 30.25325119780972,
+   "R@0.7": 18.548939082819988,
+   "mIoU": 31.166174235820026,
+   "CIDEr": 423.4127859682193,
+   "Acc": 43.35778321108394,
+   "mAP": 22.29957738108057,
+   "ev_loss": 0.3569814787308374,
+   "reg_loss": 0.33657096048196167,
+   "iou_loss": 0.6127608243624373,
+   "emb_loss": 5.547731761932374,
+   "omni_emb_loss": 0.0,
+   "span_loss": 5.533063538869221,
+   "audio_loss": 0.0,
+   "final_loss": 3.5224723672866824
+  },
+  {
+   "epoch": 4,
+   "seconds": 150.1,
+   "R@0.3": 42.43668720054757,
+   "R@0.5": 31.143052703627657,
+   "R@0.7": 18.548939082819988,
+   "mIoU": 31.482713102053143,
+   "CIDEr": 442.7608023543696,
+   "Acc": 45.645161290322584,
+   "mAP": 23.72209172923118,
+   "ev_loss": 0.3473509790500004,
+   "reg_loss": 0.31958314716815944,
+   "iou_loss": 0.5973090660572055,
+   "emb_loss": 4.863268397649128,
+   "omni_emb_loss": 0.0,
+   "span_loss": 4.826559295654295,
+   "audio_loss": 0.0,
+   "final_loss": 3.202208771705627
+  },
+  {
+   "epoch": 5,
+   "seconds": 125.5,
+   "R@0.3": 42.573579739904176,
+   "R@0.5": 31.211498973305957,
+   "R@0.7": 18.9596167008898,
+   "mIoU": 31.438887435639888,
+   "CIDEr": 482.0673577016497,
+   "Acc": 50.0,
+   "mAP": 24.25779704595116,
+   "ev_loss": 0.3416658902168275,
+   "reg_loss": 0.30821970999240855,
+   "iou_loss": 0.5861872216065721,
+   "emb_loss": 4.262781697909039,
+   "omni_emb_loss": 0.0,
+   "span_loss": 4.215245116551718,
+   "audio_loss": 0.0,
+   "final_loss": 2.9316782172520957
+  },
+  {
+   "epoch": 6,
+   "seconds": 156.9,
+   "R@0.3": 43.3264887063655,
+   "R@0.5": 31.587953456536617,
+   "R@0.7": 20.02053388090349,
+   "mIoU": 31.95419846495371,
+   "CIDEr": 478.608647183158,
+   "Acc": 49.68404423380727,
+   "mAP": 24.205635852116814,
+   "ev_loss": 0.3344001434246699,
+   "reg_loss": 0.2961217735211054,
+   "iou_loss": 0.5746010482311249,
+   "emb_loss": 3.7866858100891125,
+   "omni_emb_loss": 0.0,
+   "span_loss": 3.7284626468022664,
+   "audio_loss": 0.0,
+   "final_loss": 2.7081526931126914
+  },
+  {
+   "epoch": 7,
+   "seconds": 128.5,
+   "R@0.3": 43.3949349760438,
+   "R@0.5": 32.13552361396304,
+   "R@0.7": 20.123203285420946,
+   "mIoU": 31.94200703368166,
+   "CIDEr": 490.87345785742605,
+   "Acc": 50.709779179810724,
+   "mAP": 24.92131321561726,
+   "ev_loss": 0.3271151214838029,
+   "reg_loss": 0.282619385222594,
+   "iou_loss": 0.5606375288963316,
+   "emb_loss": 3.3194053252538045,
+   "omni_emb_loss": 0.0,
+   "span_loss": 3.2484142128626505,
+   "audio_loss": 0.0,
+   "final_loss": 2.483935995101928
+  },
+  {
+   "epoch": 8,
+   "seconds": 126.6,
+   "R@0.3": 43.77138945927447,
+   "R@0.5": 32.238193018480494,
+   "R@0.7": 20.02053388090349,
+   "mIoU": 32.04802697414137,
+   "CIDEr": 498.14843072583795,
+   "Acc": 51.44644253322909,
+   "mAP": 25.26389295381744,
+   "ev_loss": 0.3183695646127063,
+   "reg_loss": 0.2673165853818258,
+   "iou_loss": 0.5446711754798889,
+   "emb_loss": 2.897213519414266,
+   "omni_emb_loss": 0.0,
+   "span_loss": 2.810460936228434,
+   "audio_loss": 0.0,
+   "final_loss": 2.2718922551472978
+  }
+ ],
+ "best": {
+  "mAP": {
+   "value": 25.26389295381744,
+   "epoch": 8
+  },
+  "CIDEr": {
+   "value": 498.14843072583795,
+   "epoch": 8
+  }
+ }
+}
