@@ -2,15 +2,15 @@
  "counts": {
   "train: annotated": 17472,
   "train: k400 file": 5826,
-  "train: omni file": 5465,
-  "train: k400 + omni": 5465,
+  "train: omni file": 5431,
+  "train: k400 + omni": 5431,
   "val_seen: annotated": 600,
   "val_seen: k400 file": 510,
-  "val_seen: omni file": 179,
-  "val_seen: k400 + omni": 179,
+  "val_seen: omni file": 510,
+  "val_seen: k400 + omni": 510,
   "train: k400 with problems": 20,
-  "train: omni covers only part of the segments": 25,
-  "train: k400 without omni (no omni loss)": 361
+  "train: k400 without omni (no omni loss)": 395,
+  "train: omni covers only part of the segments": 3
  },
  "problems": {
   "-6hxNGausyc": [

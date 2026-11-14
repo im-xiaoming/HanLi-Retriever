@@ -93,7 +93,7 @@ def main():
     a = p.parse_args()
 
     taxonomy = pd.read_csv(a.taxonomy)
-    ants = {k: v for k, v in json.load(open(a.annotations)).items() if v['subset'] == a.split}
+    ants = {k: v for k, v in json.load(open(a.annotations, encoding='utf-8')).items() if v['subset'] == a.split}
     preds = pd.read_csv(a.predictions_csv)
     with_preds = {k: v for k, v in ants.items() if k in set(preds['video-id'])}
 
