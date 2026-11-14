@@ -24,3 +24,6 @@ datasets/k400_feats
 datasets/omni_av_feats
 .vscode
 ckpt/*
+.vscode
+Omni-Retriever
+venv
