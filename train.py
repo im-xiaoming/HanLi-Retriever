@@ -14,8 +14,9 @@ from torch.utils.data import DistributedSampler, SequentialSampler
 from libs.core import cfg
 from libs.datasets import make_dataset, make_data_loader
 from libs.modeling import make_multimodal_meta_arch
-from libs.utils import (train_one_epoch, valid_one_epoch, save_checkpoint,
+from libs.utils import (train_one_epoch, save_checkpoint,
                         make_optimizer, make_scheduler, fix_random_seed, ModelEma, RunRecord)
+from benchmark import valid_one_epoch
 
 
 def setup_distributed():
@@ -54,7 +55,7 @@ def apply_overrides(settings):
 
 def metrics_line(m):
     """One line with the validation metrics."""
-    names = ['R@0.5', 'mIoU', 'Acc', 'mAP', 'ArtAcc', 'OmniCos', 'OmniCosC', 'OmniR@1']
+    names = ['R@0.5', 'mIoU', 'Acc', 'mAP', 'ArtAcc', 'OmniCosC', 'OmniR@1']
     return '  '.join(f"{name} {m[name]:.2f}" for name in names)
 
 
@@ -109,11 +110,11 @@ def main(args):
     if args.eval:   # score a checkpoint, no training
         if is_main:
             model.load_state_dict(torch.load(args.eval, map_location=device)['state_dict'])
-            pred_csv = args.eval.removesuffix('.pth.tar') + '_val_seen.csv'   # for tools/eval_htstep.py
+            pred_csv = args.eval.removesuffix('.pth.tar') + '_val_seen.csv'   # for benchmark/eval_htstep.py
             m = valid_one_epoch(val_loader, model, train_dataset.pool_text, device,
                                 pool_ids=train_dataset.pool_ids, pred_csv=pred_csv)
             print(f"{args.eval}: {metrics_line(m)}", flush=True)
-            print(f"predictions -> {pred_csv} (official metrics: python tools/eval_htstep.py {pred_csv})")
+            print(f"predictions -> {pred_csv} (official metrics: python benchmark/eval_htstep.py {pred_csv})")
         if world_size > 1:
             dist.destroy_process_group()
         return
@@ -135,7 +136,7 @@ def main(args):
     # unannotated (GT covers ~20% of a video), so it is only logged.
     # Early stop: a metric counts as improved only if it beats its best by at least --min_delta
     # (a gain of 0.01 means nothing); the run stops when none of the watched metrics improved for --patience epochs.
-    watched = ['mAP', 'ArtAcc', 'OmniCos']
+    watched = ['mAP', 'ArtAcc', 'OmniCosC']
     best = {name: (-1.0, 0) for name in watched}   # metric -> (best value, its epoch)
     ckpt_path = os.path.join(ckpt_folder, 'model_best.pth.tar')
     last_improvement = 0
@@ -188,7 +189,7 @@ if __name__ == '__main__':
     p.add_argument('--output', default='', help='run name: checkpoints go to ckpt/<output> (default: config output_folder)')
     p.add_argument('--set', nargs='+', action='extend', default=[], help='config overrides, e.g. opt.epochs=8 model.train_cfg.loss_weight_emb=0.5')
     p.add_argument('--patience', type=int, default=2,
-                   help='stop when no watched metric (mAP, ArtAcc, OmniCos) has improved for this many epochs (0 = never)')
+                   help='stop when no watched metric (mAP, ArtAcc, OmniCosC) has improved for this many epochs (0 = never)')
     p.add_argument('--min_delta', type=float, default=0.3,
                    help='a metric counts as improved only if it beats its best by at least this much')
     main(p.parse_args())

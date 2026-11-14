@@ -49,7 +49,7 @@ class HTStepDataset(Dataset):
 
         
         # This line converts each row in CSV file into dictionary.
-        with open(taxonomy_file, newline='') as f:
+        with open(taxonomy_file, newline='', encoding='utf-8') as f:
             rows = sorted(csv.DictReader(f), key=lambda r: int(r['global_step_index']))
             
         self.pool_ids = [int(r['global_step_index']) for r in rows]
@@ -85,7 +85,7 @@ class HTStepDataset(Dataset):
         )
 
     def _load_json_db(self, json_file):
-        with open(json_file, 'r') as f:
+        with open(json_file, 'r', encoding='utf-8') as f:
             json_db = json.load(f)
             
         dict_db = tuple()
@@ -108,7 +108,7 @@ class HTStepDataset(Dataset):
             segments = np.array([a['segment'] for a in anns], dtype=np.float32) # (N, 2)
             segments[:, 1] = np.minimum(segments[:, 1], rows)   # end at most where the features end
 
-            steps = np.array([self.step_row[a['id']] for a in anns], dtype=np.int64)
+            steps = np.array([self.step_row[a['id']] for a in anns], dtype=np.int64) # step is actually array of index of pool_ids
             dict_db += ({'id': key,
                          'fps': self.default_fps,
                          'duration': value['duration'],

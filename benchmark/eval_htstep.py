@@ -1,9 +1,9 @@
 """HT-Step metrics of a predictions CSV (written by `python train.py --eval CKPT`), computed as other works do,
 to compare with their numbers:
 
-  1. article grounding mAP at tIoU 0.3 / 0.5 / 0.7 and averaged over 0.3:0.1:0.7
-     (HT-Step paper, Table 2): the official evaluation code, tools/htstep_eval/eval_article_grounding.py,
-     copied unchanged from github.com/facebookresearch/htstep;
+  1. article grounding mAP at tIoU 0.3 / 0.5 / 0.7, their mean mAP@[.3,.5,.7] (HSD, BAGLM: val_seen, since the
+     test server is closed) and the mean over 0.3:0.1:0.7 (mAP, HT-Step paper, Table 2): the official evaluation
+     code, benchmark/evaluation/eval_article_grounding.py, copied unchanged from github.com/facebookresearch/htstep;
   2. the same mAP on full-match and on partial-match steps (HT-Step paper, Table 4 and Appendix D.2):
      a step query (video, step) is "full" if all its GT segments are Full Match, "partial" if all are Partial
      Match, "mixed" otherwise. The full mAP keeps the GT segments of the full queries and drops the predictions
@@ -16,7 +16,7 @@ to compare with their numbers:
 Every metric is given on the whole val_seen split (600 videos: a video without features has no prediction,
 so its steps are missed, as in the official evaluation) and on the videos that have predictions.
 
-    python tools/eval_htstep.py ckpt/htstep/model_best_val_seen.csv
+    python benchmark/eval_htstep.py ckpt/htstep/model_best_val_seen.csv
 """
 import argparse
 import contextlib
@@ -28,10 +28,12 @@ import sys
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'htstep_eval'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'evaluation'))
 from eval_article_grounding import ANETdetectionGrouped, evaluate_article_grounding  # noqa: E402
 
-TIOUS = {'mAP@0.3': [0.3], 'mAP@0.5': [0.5], 'mAP@0.7': [0.7], 'mAP': np.linspace(0.3, 0.7, 5)}
+TIOUS = {'mAP@0.3': [0.3], 'mAP@0.5': [0.5], 'mAP@0.7': [0.7],
+         'mAP@[.3,.5,.7]': [0.3, 0.5, 0.7],   # mean of the three, as HSD (arXiv 2610.40153) and BAGLM report it
+         'mAP': np.linspace(0.3, 0.7, 5)}
 
 
 def grounding_map(ants, gt_ants, preds, taxonomy, split, tious):
@@ -93,7 +95,7 @@ def main():
     a = p.parse_args()
 
     taxonomy = pd.read_csv(a.taxonomy)
-    ants = {k: v for k, v in json.load(open(a.annotations)).items() if v['subset'] == a.split}
+    ants = {k: v for k, v in json.load(open(a.annotations, encoding='utf-8')).items() if v['subset'] == a.split}
     preds = pd.read_csv(a.predictions_csv)
     with_preds = {k: v for k, v in ants.items() if k in set(preds['video-id'])}
 
