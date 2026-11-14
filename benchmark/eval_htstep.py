@@ -1,9 +1,9 @@
 """HT-Step metrics of a predictions CSV (written by `python train.py --eval CKPT`), computed as other works do,
 to compare with their numbers:
 
-  1. article grounding mAP at tIoU 0.3 / 0.5 / 0.7 and averaged over 0.3:0.1:0.7
-     (HT-Step paper, Table 2): the official evaluation code, benchmark/evaluation/eval_article_grounding.py,
-     copied unchanged from github.com/facebookresearch/htstep;
+  1. article grounding mAP at tIoU 0.3 / 0.5 / 0.7, their mean mAP@[.3,.5,.7] (HSD, BAGLM: val_seen, since the
+     test server is closed) and the mean over 0.3:0.1:0.7 (mAP, HT-Step paper, Table 2): the official evaluation
+     code, benchmark/evaluation/eval_article_grounding.py, copied unchanged from github.com/facebookresearch/htstep;
   2. the same mAP on full-match and on partial-match steps (HT-Step paper, Table 4 and Appendix D.2):
      a step query (video, step) is "full" if all its GT segments are Full Match, "partial" if all are Partial
      Match, "mixed" otherwise. The full mAP keeps the GT segments of the full queries and drops the predictions
@@ -31,7 +31,9 @@ import pandas as pd
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'evaluation'))
 from eval_article_grounding import ANETdetectionGrouped, evaluate_article_grounding  # noqa: E402
 
-TIOUS = {'mAP@0.3': [0.3], 'mAP@0.5': [0.5], 'mAP@0.7': [0.7], 'mAP': np.linspace(0.3, 0.7, 5)}
+TIOUS = {'mAP@0.3': [0.3], 'mAP@0.5': [0.5], 'mAP@0.7': [0.7],
+         'mAP@[.3,.5,.7]': [0.3, 0.5, 0.7],   # mean of the three, as HSD (arXiv 2610.40153) and BAGLM report it
+         'mAP': np.linspace(0.3, 0.7, 5)}
 
 
 def grounding_map(ants, gt_ants, preds, taxonomy, split, tious):
