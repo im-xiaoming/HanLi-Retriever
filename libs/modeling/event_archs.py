@@ -37,6 +37,7 @@ class EventCaptionTransformer(nn.Module):
         clip_dim=512,        # size of the step text vectors,
         pool_queries=8,      # omni span head: learned queries of its attention pooling
         omni_span_hidden=4096,  # hidden size of the omni span head MLP
+        seg_pool='mean',     # SegmentContext span vector: 'mean' | 'attn' | 'mean+attn' (see SegmentContext)
     ):
         super().__init__()
         self.fpn_strides = [scale_factor ** i for i in range(backbone_arch[-1] + 1)] # [1, 2, 4, 8, 16, 32]
@@ -60,7 +61,7 @@ class EventCaptionTransformer(nn.Module):
                                        head_num_layers, head_kernel_size, head_with_ln)
         self.embed_head = EmbedHead(D, head_dim, head_num_layers, head_kernel_size,
                                     head_with_ln, clip_dim, omni_head_dim)
-        self.seg_ctx = SegmentContext(head_dim)
+        self.seg_ctx = SegmentContext(head_dim, seg_pool)
         # condition the features on the article's step texts (ActionFormer-T of the HT-Step paper)
         self.article_cond = ArticleCondition(D, clip_dim)
         # predict the video's article from the video, so it needs not be given at inference

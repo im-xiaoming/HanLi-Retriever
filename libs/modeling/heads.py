@@ -210,8 +210,22 @@ class OmniSpanHead(nn.Module):
 
 
 class SegmentContext(nn.Module):
-    def __init__(self, dim: int = 512):
+    def __init__(
+        self,
+        dim: int = 512,
+        pool: str = 'mean',   # vector of the span: 'mean' (span_mean), 'attn' (AttentionPool instead of the mean),
+                              # 'mean+attn' (mean + AttentionPool, its last layer zero at start: starts as 'mean')
+        n_queries: int = 4,   # 'attn', 'mean+attn': learned queries of the AttentionPool
+        hidden: int = 2048,   # 'attn', 'mean+attn': hidden size of the AttentionPool MLP
+    ):
         super().__init__()
+        assert pool in ('mean', 'attn', 'mean+attn'), pool
+        self.pool_mode = pool
+        if pool != 'mean':
+            self.pool = AttentionPool(dim, dim, n_queries, hidden)
+            if pool == 'mean+attn':
+                nn.init.zeros_(self.pool.out[-1].weight)
+                nn.init.zeros_(self.pool.out[-1].bias)
         self.mlp = nn.Sequential(
             nn.Linear(2 * dim + 2, dim), # span + glob + pos = 512 + 512 + 2
             nn.GELU(),
@@ -226,7 +240,14 @@ class SegmentContext(nn.Module):
         length,  # real steps of the video
         segs,    # (N, 2) segments, in steps
     ):
-        span = span_mean(raw, length, segs)                          # (N, D)
+        if self.pool_mode == 'mean':
+            span = span_mean(raw, length, segs)                      # (N, D)
+        else:
+            masks = segment_masks(length, segs, raw.shape[1])        # (N, T)
+            x = raw.t()[None].expand(len(segs), -1, -1)              # (N, T, D) the same video for every segment
+            span = self.pool(x, masks)                               # (N, D)
+            if self.pool_mode == 'mean+attn':
+                span = span + span_mean(raw, length, segs)
         glob = raw[:, :length].mean(-1).expand_as(span)              # (N, D)
         pos = (segs / float(length)).clamp(0, 1)                     # (N, 2)
         return F.normalize(span + self.mlp(torch.cat((span, glob, pos), -1)), dim=-1) # (N, D)
