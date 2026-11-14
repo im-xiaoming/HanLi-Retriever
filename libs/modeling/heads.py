@@ -188,7 +188,7 @@ class AttentionPool(nn.Module):
 class OmniSpanHead(nn.Module):
     """Omni vector of a segment given its start and end: learned attention pooling of the level-0 features of
     the segment, then an MLP to the OmniRetriever space (3584), L2-normalised. It is trained against the teacher
-    vector of the segment, so the vector it gives for a GT segment is exactly what OmniCos measures."""
+    vector of the segment, so the vector it gives for a GT segment is exactly what OmniCosC measures."""
 
     def __init__(
         self,

@@ -11,11 +11,11 @@ cosine to the OmniRetriever `encode_av` vector of each segment).
 
 Model metrics (510 val_seen videos with features, Colab A100 run):
 
-| mAP (article given) | ArtAcc | OmniCos | OmniCosC | OmniR@1 |
-|---|---|---|---|---|
-| 30.37 | 59.8 | 91.1 | 75.2 | 60.8 |
+| mAP (article given) | ArtAcc | OmniCosC | OmniR@1 |
+|---|---|---|---|
+| 30.37 | 59.8 | 75.2 | 60.8 |
 
-Metrics of other works (`tools/eval_htstep.py`, checkpoint of the RTX 3060 run on HF
+Metrics of other works (`benchmark/eval_htstep.py`, checkpoint of the RTX 3060 run on HF
 `nguyenminh04/uniav-htstep-omni`). "600" = the whole val_seen split, the 90 videos without features count as
 missed, as in the official evaluation; "510" = the videos with features.
 
@@ -24,7 +24,7 @@ missed, as in the official evaluation; "510" = the videos with features.
 | 600 | 37.23 | 25.86 | 13.50 | 25.72 | 28.92 | 21.45 | 36.57 |
 | 510 | 42.85 | 29.84 | 15.74 | 29.70 | 34.18 | 25.13 | 42.13 |
 
-- mAP: official HT-Step code (`tools/htstep_eval/`, unchanged). HT-Step paper, Table 2 (seen *test* S1):
+- mAP: official HT-Step code (`benchmark/evaluation/`, unchanged). HT-Step paper, Table 2 (seen *test* S1):
   ActionFormer-T 36.9 / 26.5 / 15.3 / 26.3, with HowTo100M pre-training 41.2 / 30.8 / 18.3 / 30.2.
 - Full / partial match: as Appendix D.2 of the HT-Step paper; Table 4 (test S1): ActionFormer 29.6 / 20.4.
 - R@1: as VINA / MPTVA (the step is recalled if its best moment lies in one of its GT segments, pooled over the
@@ -66,7 +66,7 @@ Scripts:
        torchrun --nproc_per_node=4 train.py              # several GPUs
        python train.py --output NAME --set opt.epochs=8  # other output folder, override a parameter
        python train.py --eval ckpt/htstep/model_best.pth.tar   # also writes model_best_val_seen.csv
-       python tools/eval_htstep.py ckpt/htstep/model_best_val_seen.csv   # metrics of other works
+       python benchmark/eval_htstep.py ckpt/htstep/model_best_val_seen.csv   # metrics of other works
 
    On Colab (from `/content`): `BRANCH=main bash colab_train.sh setup` (code + data, ~10 min), then
    `bash colab_train.sh train NAME`.
@@ -80,8 +80,10 @@ numbers); about 12 epochs, ~45 min on an A100.
 train.py              training / evaluation
 libs/core/config.py   all parameters
 libs/datasets/        HT-Step dataset, file readers, crop, training targets
-libs/modeling/        backbone, heads, losses, model (event_archs.py)
-libs/utils/           optimizer, EMA, train / valid loop, NMS, metrics
-tools/                data preparation (features, text vectors), eval_htstep.py (metrics of other works);
-                      htstep_eval/ = official HT-Step evaluation; pipeline/ = video download + feature extraction
+libs/modeling/        backbone, heads, model (event_archs.py), its training losses (criterion.py, losses.py)
+                      and inference (postprocess.py)
+libs/utils/           optimizer, EMA, train loop, NMS
+benchmark/            evaluation: valid loop (validate.py), metrics (metrics.py, cider.py),
+                      eval_htstep.py (metrics of other works), evaluation/ = official HT-Step evaluation
+tools/                data preparation (features, text vectors); pipeline/ = video download + feature extraction
 ```

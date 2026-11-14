@@ -2,7 +2,7 @@
 to compare with their numbers:
 
   1. article grounding mAP at tIoU 0.3 / 0.5 / 0.7 and averaged over 0.3:0.1:0.7
-     (HT-Step paper, Table 2): the official evaluation code, tools/htstep_eval/eval_article_grounding.py,
+     (HT-Step paper, Table 2): the official evaluation code, benchmark/evaluation/eval_article_grounding.py,
      copied unchanged from github.com/facebookresearch/htstep;
   2. the same mAP on full-match and on partial-match steps (HT-Step paper, Table 4 and Appendix D.2):
      a step query (video, step) is "full" if all its GT segments are Full Match, "partial" if all are Partial
@@ -16,7 +16,7 @@ to compare with their numbers:
 Every metric is given on the whole val_seen split (600 videos: a video without features has no prediction,
 so its steps are missed, as in the official evaluation) and on the videos that have predictions.
 
-    python tools/eval_htstep.py ckpt/htstep/model_best_val_seen.csv
+    python benchmark/eval_htstep.py ckpt/htstep/model_best_val_seen.csv
 """
 import argparse
 import contextlib
@@ -28,7 +28,7 @@ import sys
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'htstep_eval'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'evaluation'))
 from eval_article_grounding import ANETdetectionGrouped, evaluate_article_grounding  # noqa: E402
 
 TIOUS = {'mAP@0.3': [0.3], 'mAP@0.5': [0.5], 'mAP@0.7': [0.7], 'mAP': np.linspace(0.3, 0.7, 5)}
