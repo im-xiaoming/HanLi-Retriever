@@ -114,10 +114,11 @@ class EmbedHead(nn.Module):
 def segment_masks(
     length,   # real level-0 steps of the video
     segs,     # (N, 2) segments (start, end), in level-0 steps
-    T,        # level-0 steps of the padded video
+    T,        # level-0 steps of the padded video (T)
 ):
-    """(N, T) bool: the level-0 steps covered by every segment, from floor(start) to ceil(end) included,
-    inside the real steps, at least one step."""
+    """
+    Create mask with shape: (N, T).
+    """
     lo = segs[:, 0].floor().clamp(min=0, max=length - 1).long()             # (N,) first step
     hi = segs[:, 1].ceil().long() + 1
     hi = torch.maximum(hi.clamp(max=length), lo + 1)                        # (N,) one past the last step
@@ -186,9 +187,6 @@ class AttentionPool(nn.Module):
 
 
 class OmniSpanHead(nn.Module):
-    """Omni vector of a segment given its start and end: learned attention pooling of the level-0 features of
-    the segment, then an MLP to the OmniRetriever space (3584), L2-normalised. It is trained against the teacher
-    vector of the segment, so the vector it gives for a GT segment is exactly what OmniCosC measures."""
 
     def __init__(
         self,
@@ -273,8 +271,8 @@ class ArticleHead(nn.Module):
 
     def __init__(
         self,
-        dim,               # channels of the level-0 features
-        head_dim,          # size of the video and article vectors
+        dim,               # channels of the level-0 features (1024)
+        head_dim,          # size of the video and article vectors (512)
         text_dim=512,      # size of the step text vectors
         num_articles=617,  # every article also gets its own learned vector, added to its text vector
     ):
@@ -297,9 +295,9 @@ class ArticleHead(nn.Module):
     ):
         """Mean and max over the real steps of one level, concatenated: (B, 2D)."""
         m = m.to(f.dtype)
-        mean = (f * m).sum(-1) / m.sum(-1).clamp(min=1)
-        mx = f.masked_fill(m == 0, -1e4).max(-1).values
-        return torch.cat((mean, mx), -1)
+        mean = (f * m).sum(-1) / m.sum(-1).clamp(min=1) # (B, D)
+        mx = f.masked_fill(m == 0, -1e4).max(-1).values # (B, D)
+        return torch.cat((mean, mx), -1) # (B, 2D)
 
     def forward(
         self,

@@ -108,7 +108,7 @@ class HTStepDataset(Dataset):
             segments = np.array([a['segment'] for a in anns], dtype=np.float32) # (N, 2)
             segments[:, 1] = np.minimum(segments[:, 1], rows)   # end at most where the features end
 
-            steps = np.array([self.step_row[a['id']] for a in anns], dtype=np.int64)
+            steps = np.array([self.step_row[a['id']] for a in anns], dtype=np.int64) # step is actually array of index of pool_ids
             dict_db += ({'id': key,
                          'fps': self.default_fps,
                          'duration': value['duration'],

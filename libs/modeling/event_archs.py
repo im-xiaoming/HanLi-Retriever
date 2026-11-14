@@ -44,8 +44,6 @@ class EventCaptionTransformer(nn.Module):
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
 
-        # conv + transformer backbone, one stream per modality (TemporalMaxer and DyFADet backbones were tried
-        # and removed: 24.51 and 24.94 mAP vs 25.26, see docs/experiments_report.md)
         self.backbone = make_multimodal_backbone(
             'convTransformer',
             **{
@@ -77,7 +75,7 @@ class EventCaptionTransformer(nn.Module):
 
     def set_step_pool(
         self,
-        pool_raw,  # (4958, clip_dim) InternVideo2 text vectors of the steps, row i = step i
+        pool_raw,  # (N, D) InternVideo2 text vectors of the steps, row i = step i
         article_steps,  # [617] pool rows of every article's steps (HTStepDataset.articles order)
     ):
         self.pool_raw = pool_raw # pool_emb
@@ -85,14 +83,13 @@ class EventCaptionTransformer(nn.Module):
         # article vector = mean of its normalised step vectors (A, clip_dim)
         pn = F.normalize(pool_raw, dim=-1)
         self.article_raw = torch.stack([
-            #           (n_steps, 512)
             pn[torch.as_tensor(s, device=pn.device)].mean(0) for s in article_steps
         ], dim=0)
 
         # article_of_step[s] = article of step s (every step belongs to exactly one article)
-        self.article_of_step = torch.zeros(len(pool_raw), dtype=torch.long, device=pool_raw.device)
-        for article, steps in enumerate(article_steps):
-            self.article_of_step[torch.as_tensor(steps, device=pool_raw.device)] = article
+        self.article_of_step = torch.zeros(len(pool_raw), dtype=torch.long, device=pool_raw.device) # (N,)
+        for i, steps in enumerate(article_steps):
+            self.article_of_step[torch.as_tensor(steps, device=pool_raw.device)] = i
 
     @property
     def device(self):
