@@ -110,13 +110,7 @@ def ctr_diou_loss_1d(
 
 
 class TeacherQueue:
-    """Teacher vectors of the last batches, extra negatives of the omni InfoNCE.
-
-    The teachers are fixed vectors read from disk (not computed by the model), so an old entry is as valid as a
-    new one: no momentum encoder is needed, unlike MoCo. A plain attribute of the model (not a buffer): it is
-    not saved in the checkpoints.
-    """
-
+    
     def __init__(self, size):
         self.size = size
         self.bank = None   # (size, 3584), allocated at the first push
@@ -148,20 +142,6 @@ def omni_distill_loss(
     nce_temperature=0.05,
     center=None,   # (3584,) mean of the train teacher vectors: the cos loss compares the vectors minus it
 ):
-    """Distillation of the OmniRetriever vectors (teachers) into the model (students). Three losses:
-
-    kd  : KL distillation. Every vector (student or teacher) gets a similarity distribution over the teachers of
-          the batch: softmax(similarities / temperature). The student's distribution must match the one of its own
-          teacher. So the student learns how its segment relates to the other segments, as the teacher sees it
-          (a segment of the same step, similar to its teacher, gets a high probability too).
-    cos : 1 - cosine(student - center, own teacher - center), center = train teacher mean: the part every teacher
-          shares is removed, as in the OmniCosC metric, so the loss pulls on what is specific to the segment
-          (without it, the mean alone already gives cos ~0.80).
-    nce : InfoNCE, student -> teachers: its own teacher must be the closest among the teachers of the batch and of
-          the queue (one-hot target, where kd copies the teacher's soft distribution). This is what OmniR@1
-          measures (own teacher = closest of all validation teachers). A candidate (almost) equal to the own
-          teacher (cos > 0.999: the same segment again) is not a negative.
-    """
     if len(students) == 0:   # no segment with a teacher in this batch (very rare): no loss
         zero = students.sum() * 0.0
         return {'kd': zero, 'cos': zero, 'nce': zero}
@@ -199,17 +179,6 @@ def omni_losses(
     nce_temperature=0.05,
     center=None,     # (3584,) mean of the train teacher vectors, for the centred cos loss
 ):
-    """Distillation of the OmniRetriever vectors (teachers), for the point head and the span head.
-
-    1. The teachers of the batch: every GT segment that has a teacher vector, put in one list (M rows).
-        teacher_row[b, s] remembers where segment s of video b sits in that list (-1: no teacher).
-    2. Point head: every point inside a GT segment that has a teacher is a student; its target is the row of
-        its segment's teacher.
-    3. Span head: every GT segment (left after the crop) that has a teacher gets one student vector from the
-        span head; its target is the row of its own teacher.
-    Both are trained by omni_distill_loss (KL distillation over the M teachers, cosine to the own teacher and
-    InfoNCE over the M teachers + the queue).
-    """
     dev = omni_em.device
 
     # 1. the teachers of the batch

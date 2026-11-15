@@ -1,7 +1,5 @@
 # Tổng hợp các run, 15/11/2026
 
-Các run `run1` đến `run10` chạy trong ngày 15/11/2026
-
 
 - **Tập đánh giá:** val_seen, 510 video.
 
@@ -109,6 +107,51 @@ Mỗi cột là giá trị tốt nhất trên mọi epoch, nên các cột có t
 | run7 | 11 (e9) | 28.59 | 33.95 | 33.46 | 69.00 | 56.67 | 67.63 | 67.09 |
 | run8 | 11 (e9) | 29.98 | 35.59 | 34.62 | 69.89 | 61.18 | 68.15 | 66.69 |
 | run9 | 13 (e11) | 30.17 | 35.32 | 34.66 | **70.33** | 58.82 | 64.62 | **67.53** |
+
+## So sánh với các bài báo
+
+Chỉ mAP và R@1 có số để so với bài báo khác. Acc, ArtAcc, OmniCosC và OmniR@1 là thang đo riêng của đề tài này, không bài nào báo cáo.
+
+### Lưu ý khi so
+
+- **Số video.** Các bài báo chấm trên đủ 600 video val_seen; video không có dự đoán bị tính là bỏ sót. Bảng kết quả ở trên chỉ chấm 510 video có feature, nên cao hơn.
+
+### mAP article grounding
+
+| Phương pháp | Cách học | Tập chấm | @0.3 | @0.5 | @0.7 | TB 0.3–0.7 |
+|---|---|---|---|---|---|---|
+| ActionFormer (HT-Step, Table 2) | có giám sát | test seen | | | | 25.4 |
+| ActionFormer-T (HT-Step, Table 2) | có giám sát | test seen | 36.9 | 26.5 | 15.3 | 26.3 |
+| ActionFormer-T + pre-train HowTo100M (HT-Step, Table 2) | có giám sát | test seen | 41.2 | 30.8 | 18.3 | 30.2 |
+| NaSVA (chạy lại trong bài HSD) | học yếu | val_seen 600 | 15.02 | 5.70 | 1.11 | 6.89 |
+| BaGLM, InternVL2.5-8B | không train, online | val_seen 600 | 15.90 | 6.70 | 1.50 | 7.70 |
+| UniTime-7B (trong bài HSD) | temporal grounding | val_seen 600 | 19.92 | 11.48 | 5.52 | 12.27 |
+| HSD, Qwen3-VL-8B | không train, online | val_seen 600 | 26.45 | 13.78 | 6.16 | 15.13 |
+| **Đề tài** | có giám sát | val_seen 510 | 42.85 | 29.84 | 15.74 | 29.70 |
+
+Theo mAP trung bình, đề tài cao hơn các phương pháp không train (HSD 15.13) và học yếu (NaSVA 6.89) khoảng 10–19 điểm. So với các phương pháp có giám sát của bài HT-Step, đề tài xấp xỉ ActionFormer-T (26.3) nhưng thấp hơn bản có pre-train HowTo100M (30.2), dù hai bên chấm trên hai tập khác nhau.
+
+
+### R@1 step grounding
+
+Một bước được tính là tìm thấy nếu thời điểm model chọn cho bước đó nằm trong một đoạn GT của bước.
+
+| Phương pháp | Cách học | R@1 |
+|---|---|---|
+| TAN* | học yếu | 30.7 |
+| VINA | học yếu | 39.1 |
+| NaSVA | học yếu | 53.1 |
+| NaSVA-Online | học yếu, online | 46.1 |
+| BaGLM | không train, online | 57.4 (bài HSD chạy lại được 54.3) |
+| HSD, Qwen2.5-VL-7B | không train, online | 55.8 |
+| **Đề tài** (510 video) | có giám sát | 42.13 |
+
+
+### Nguồn
+
+- HT-Step: Afouras và cộng sự, "HT-Step: Aligning Instructional Articles with How-To Videos", NeurIPS 2023 Datasets and Benchmarks.
+- BaGLM: Zanella và cộng sự, "Training-free Online Video Step Grounding", NeurIPS 2025, arXiv 2510.16989.
+- HSD: "Hierarchical Step Decomposition for Training-free Online Video Step Grounding", arXiv 2610.40153. Các dòng NaSVA, UniTime và bảng R@1 lấy từ bài này.
 
 ## Nhận xét
 
