@@ -1,0 +1,281 @@
+\documentclass{IEEEtran}
+\usepackage[utf8]{vietnam}
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp,nicefrac}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\markboth{STUDENT SCIENTIFIC RESEARCH COMMUNICATION, Volume II, 2026}
+{Nguyễn Văn A \MakeLowercase{\textit{et al.}}: Event-Aware Multi-Vector Retrieval of Recipe Steps}
+\begin{document}
+\title{UEMR: Event-Aware Multi-Vector Retrieval of Recipe Steps in Instructional Videos}
+\author{Nguyễn Văn A, Nguyễn Văn B, and Nguyễn Văn C
+\thanks{Bản thảo nộp ngày \ldots/\ldots/2026. Nghiên cứu được thực hiện trong khuôn khổ khoá luận tốt nghiệp tại Khoa Công nghệ Thông tin, Trường Đại học Công nghiệp TP. Hồ Chí Minh. (Điền thông tin tài trợ nếu có.)}
+\thanks{Nguyễn Văn A và Nguyễn Văn B là sinh viên Khoa Công nghệ Thông tin, Trường Đại học Công nghiệp TP. Hồ Chí Minh, TP. Hồ Chí Minh, Việt Nam (e-mail: \ldots).}
+\thanks{Nguyễn Văn C, giảng viên hướng dẫn, Khoa Công nghệ Thông tin, Trường Đại học Công nghiệp TP. Hồ Chí Minh (e-mail: \ldots).}}
+
+\maketitle
+
+\begin{abstract}
+A user types one sentence that describes a cooking step and expects two answers: which video contains the step, and where the step happens in that video. Representing a whole video by one vector serves the first need poorly and the second not at all. This paper presents UEMR, an event-aware multi-vector index that serves both needs with one index. An audio-visual event localizer cuts every video into step segments, the uncovered stretches are filled with short windows, and every segment receives two vectors in the space of the multimodal retriever that encodes the query: one computed by the retriever itself, and one produced by the localizer, which was distilled from that same retriever. A video is scored by the best of its segments, and that segment is returned as the moment. We also define a leak-free evaluation protocol: the localizer predicts the recipe instead of reading it from the labels, answers are counted by step text across videos, and every parameter is chosen on a development split of HT-Step before a single zero-shot run on YouCook2. On the development split, the main variant reaches a recall at rank one of 63.34 against 49.00 for one vector per video. These development numbers only serve to select parameters; the zero-shot results on YouCook2 are pending.
+
+Người dùng gõ một câu mô tả một bước nấu ăn và cần hai câu trả lời: video nào chứa bước đó, và bước đó nằm ở đâu trong video. Biểu diễn cả video bằng một vector đáp ứng nhu cầu thứ nhất kém và không đáp ứng được nhu cầu thứ hai. Bài báo trình bày UEMR, một chỉ mục đa vector theo sự kiện, dùng một chỉ mục cho cả hai nhu cầu. Một bộ định vị sự kiện audio-visual cắt mỗi video thành các đoạn bước, phần chưa được phủ được lấp bằng các cửa sổ ngắn, và mỗi đoạn có hai vector trong không gian của mô hình truy hồi đa phương thức dùng để mã hoá câu hỏi: một vector do chính mô hình truy hồi tính, một vector do bộ định vị sinh ra, vốn được chưng cất từ chính mô hình truy hồi đó. Điểm của video là điểm của đoạn tốt nhất, và đoạn đó được trả về làm khoảnh khắc. Bài báo cũng định nghĩa một giao thức đánh giá không rò rỉ: bộ định vị tự đoán công thức thay vì đọc từ nhãn, đáp án được tính theo văn bản của bước trên mọi video, và mọi tham số được chọn trên tập dev của HT-Step trước một lần chấm zero-shot duy nhất trên YouCook2. Trên tập dev, biến thể chính đạt recall tại hạng một 63,34, so với 49,00 khi dùng một vector cho mỗi video. Các số trên dev chỉ dùng để chọn tham số; kết quả zero-shot trên YouCook2 đang chờ.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Instructional video, knowledge distillation, multi-vector retrieval, text-to-video retrieval, video corpus moment retrieval.
+\end{IEEEkeywords}
+
+\section{Giới thiệu}
+\label{sec:introduction}
+\IEEEPARstart{M}{ột} người đang nấu ăn muốn xem lại một bước, chẳng hạn ``cho hành vào chảo''. Họ cần tìm đúng video chứa bước đó trong một kho lớn, rồi tua tới đúng đoạn. Bài toán thứ nhất là truy hồi video từ văn bản. Bài toán thứ hai là video corpus moment retrieval (VCMR), tức tìm khoảnh khắc trong cả kho video~\cite{tvr}.
+
+Các mô hình truy hồi audio-visual lớn như OmniRetriever~\cite{omniretriever} mã hoá tốt một đoạn ngắn, nhưng một video nấu ăn dài nhiều phút và chứa nhiều bước. Dồn cả video vào một vector làm mờ từng bước, và không chỉ ra được khoảnh khắc. Cắt video thành nhiều đoạn rồi chấm bằng MaxSim (điểm của video là điểm của đoạn tốt nhất, như late interaction của ColBERT~\cite{colbert}) giải quyết cả hai việc, nhưng phải chọn được chỗ cắt và nguồn vector cho mỗi đoạn.
+
+Bài báo dùng một bộ định vị sự kiện audio-visual dựa trên UniAV~\cite{uniav} để cắt video theo bước. Bộ định vị này được nhóm huấn luyện trên HT-Step~\cite{htstep}, và ở đây được huấn luyện lại với thầy là chính mô hình truy hồi dùng để mã hoá câu hỏi. Nhờ vậy nó sinh thêm cho mỗi đoạn một vector trong cùng không gian với câu hỏi.
+
+Các đóng góp của bài báo:
+\begin{itemize}
+\item \textbf{UEMR}: chỉ mục đa vector theo sự kiện, gồm cắt bằng UniAV, lấp chỗ trống và MaxSim. Một chỉ mục phục vụ cả truy hồi video lẫn định vị khoảnh khắc.
+\item \textbf{Dùng chính mô hình truy hồi làm thầy cho bộ định vị}: một lượt chạy UniAV cho cả đoạn lẫn vector đoạn trong không gian của mô hình truy hồi. Từ đó có UEMR-Lite (không chạy mô hình truy hồi 7 tỉ tham số phía video) và UEMR-Full. Kiến trúc span head và loss chưng cất là của code UniAV của nhóm; chúng tôi không xem chưng cất là đóng góp mới.
+\item \textbf{Giao thức đánh giá}: suy luận không rò rỉ article cho bộ định vị có điều kiện theo công thức, chấm multi-positive, tách bạch tập dev và benchmark, đánh giá zero-shot.
+\item \textbf{Nghiên cứu có kiểm soát} trên tập dev (cách cắt, cách chấm) và đánh giá zero-shot trên YouCook2~\cite{youcook2}.
+\end{itemize}
+
+\section{Công trình liên quan}
+\textbf{Truy hồi video từ văn bản.} CLIP4Clip~\cite{clip4clip} đưa CLIP~\cite{clip} vào truy hồi video. OmniRetriever~\cite{omniretriever}, dựa trên WAVE~\cite{wave}, đưa video, âm thanh và văn bản vào một không gian chung 3584 chiều. Bài báo dùng mô hình này làm bộ mã hoá, không sửa.
+
+\textbf{Đa vector và MaxSim.} ColBERT~\cite{colbert} biểu diễn văn bản bằng nhiều vector và chấm bằng tổng các MaxSim. UEMR dùng một MaxSim theo đoạn video.
+
+\textbf{Định vị bước.} ActionFormer~\cite{actionformer} và UniAV~\cite{uniav} định vị sự kiện trên chuỗi đặc trưng. HT-Step~\cite{htstep} gán nhãn thời gian cho các bước của bài viết hướng dẫn trên video HowTo100M~\cite{howto100m}.
+
+\textbf{Chưng cất.} Knowledge distillation~\cite{kd} dạy mô hình nhỏ bắt chước mô hình lớn. Bài báo chỉ dùng lại loss chưng cất có sẵn trong code UniAV của nhóm.
+
+\section{Phương pháp UEMR}
+\label{sec:method}
+
+\begin{figure*}[t]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=5mm, >=Stealth,
+  box/.style={draw, rounded corners=2pt, align=center, font=\footnotesize, text width=2.7cm, inner sep=3pt, minimum height=9mm},
+  trn/.style={box, fill=gray!18}]
+\node[box] (v) {Video\\(hình + tiếng)};
+\node[box, right=of v] (f) {Đặc trưng InternVideo2\\+ BEATs, 1 dòng/giây};
+\node[trn, right=of f] (u) {UniAV\\(article top-1 tự đoán)};
+\node[box, right=of u] (r6) {Đề xuất đoạn\\$\mathrm{conf} \geq \theta$ (R6)};
+\node[box, right=of r6] (r8) {Lấp chỗ trống\\R8 $= \{S_i\}$};
+\node[box, below=8mm of r6] (e) {$\mathbf{e}_i$: Omni \texttt{best}\\trên đoạn $S_i$};
+\node[trn, below=8mm of r8] (h) {$\mathbf{h}_i$: span head\\UniAV trên $S_i$};
+\node[box, below=8mm of e, xshift=16mm, text width=4.4cm] (s) {$s_i = \cos(\mathbf{t},\mathbf{e}_i) + \beta \cos(\mathbf{t},\mathbf{h}_i)$};
+\node[box, left=6mm of s] (t) {Omni \texttt{best}\\(văn bản) $\rightarrow \mathbf{t}$};
+\node[box, left=of t] (q) {Câu hỏi $q$};
+\node[box, right=6mm of s] (m) {MaxSim: $\max_i s_i$\\khoảnh khắc $= \arg\max_i s_i$};
+\draw[->] (v) -- (f);
+\draw[->] (f) -- (u);
+\draw[->] (u) -- (r6);
+\draw[->] (r6) -- (r8);
+\draw[->] (r8.south) -- (e.north);
+\draw[->] (r8) -- (h);
+\draw[->] (e) -- (s);
+\draw[->] (h) -- (s);
+\draw[->] (q) -- (t);
+\draw[->] (t) -- (s);
+\draw[->] (s) -- (m);
+\end{tikzpicture}}
+\caption{Sơ đồ UEMR. Hàng trên chạy offline cho mỗi video của kho; hàng dưới chạy cho mỗi câu hỏi. Ô tô xám là mô hình được huấn luyện (UniAV, kèm span head); mọi mô hình khác đóng băng. $\mathbf{e}_i$ và $\mathbf{h}_i$ cùng nằm trong không gian của Omni \texttt{best}.}
+\label{fig:uemr}
+\end{figure*}
+
+Hình~\ref{fig:uemr} tóm tắt phương pháp. Phần này chỉ mô tả cách UEMR dùng các mô hình có sẵn; kiến trúc và cách huấn luyện UniAV nằm trong~\cite{uniav} và code của nhóm.
+
+\subsection{Mô hình truy hồi và bộ định vị}
+\textbf{Omni \texttt{best}} là OmniRetriever~\cite{omniretriever} với adapter LoRA đã được nhóm huấn luyện trên HT-Step. Nó mã hoá một đoạn video (8 khung hình và 8 giây tiếng) thành vector $\mathbf{e}_i$, và mã hoá câu hỏi thành $\mathbf{t}$. Mọi vector được chuẩn hoá L2.
+
+\textbf{UniAV} nhận đặc trưng hình InternVideo2~\cite{internvideo2} và đặc trưng tiếng BEATs~\cite{beats} của cả video. Đầu ra gồm các đề xuất đoạn kèm điểm tin cậy, và một span head cho vector của một đoạn bất kỳ trong không gian của Omni. UniAV có điều kiện theo các bước của công thức (article). Trong HT-Step, các bước này lấy từ nhãn. Với truy hồi, dùng nhãn nghĩa là đọc trước đáp án. Vì vậy UEMR thay danh sách bước bằng các bước của article mà chính UniAV đoán đúng thứ nhất (top-1). Thay đổi này nằm trong một adapter, code mô hình giữ nguyên.
+
+Trong bài, UniAV được huấn luyện lại đúng một lần, chỉ đổi thầy sang Omni \texttt{best}, nên $\mathbf{h}_i$ học cách gần với $\mathbf{e}_i$. Chữ ``Unified'' trong tên UEMR chỉ việc mọi vector nằm trong một không gian.
+
+\subsection{Cắt đoạn}
+\textbf{R6} gồm các đề xuất của UniAV có điểm tin cậy không nhỏ hơn ngưỡng $\theta$. Video không có đề xuất nào đạt ngưỡng thì giữ đề xuất điểm cao nhất. Các đoạn trùng nhau nhiều được gộp, và đoạn quá ngắn được nới ra.
+
+\textbf{R8} là R6 cộng các đoạn lấp. Mỗi khoảng không đoạn R6 nào phủ, nếu dài ít nhất $L_{\min}$, được chia đều thành các cửa sổ dài xấp xỉ $L_{\mathrm{fill}}$. Đoạn lấp giữ lại các bước mà UniAV bỏ sót. Vector $\mathbf{h}_i$ của đoạn lấp được tính bằng cùng span head, trên cùng đặc trưng của video.
+
+\subsection{Chấm điểm}
+Với câu hỏi $q$ và video $V$ có các đoạn $\{S_i\}$, điểm của đoạn ở biến thể chính là
+\begin{equation}
+\label{eq:full}
+s_i = \cos(\mathbf{t}, \mathbf{e}_i) + \beta \cos(\mathbf{t}, \mathbf{h}_i),
+\end{equation}
+và điểm của video là
+\begin{equation}
+\label{eq:maxsim}
+S(q, V) = \max_{i \in V} s_i .
+\end{equation}
+Khoảnh khắc trả về là đoạn đạt cực đại trong~\eqref{eq:maxsim}. Bảng~\ref{tab:variants} liệt kê bốn biến thể. Chúng dùng chung đoạn R8 và chỉ khác điểm $s_i$. Với UEMR-Hybrid, $Z_X(s) = (s - \mu_X)/\sigma_X$, trong đó $\mu_X$ và $\sigma_X$ là trung bình và độ lệch chuẩn của cột $X$ trên mọi cặp (câu hỏi, đoạn R8) của kho; phép chuẩn hoá này không dùng nhãn.
+
+\begin{table}[t]
+\caption{Bốn biến thể UEMR trên cùng đoạn R8}
+\label{tab:variants}
+\setlength{\tabcolsep}{3pt}
+\centering
+\begin{tabular}{|p{52pt}|p{112pt}|p{58pt}|}
+\hline
+Biến thể & Điểm của đoạn $s_i$ & Omni chạy phía video \\
+\hline
+UEMR-Omni (b) & $\cos(\mathbf{t}, \mathbf{e}_i)$ & mọi đoạn \\
+UEMR-Lite (S) & $\cos(\mathbf{t}, \mathbf{h}_i)$ & không \\
+UEMR-Full (U) & $\cos(\mathbf{t}, \mathbf{e}_i) + \beta \cos(\mathbf{t}, \mathbf{h}_i)$ & mọi đoạn \\
+UEMR-Hybrid (C1) & đoạn R6: $Z_b(\cos(\mathbf{t}, \mathbf{e}_i))$; đoạn lấp: $Z_S(\cos(\mathbf{t}, \mathbf{h}_i))$ & đoạn R6 \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Giao thức đánh giá}
+\label{sec:protocol}
+\textbf{Dữ liệu và vai trò.} HT-Step train dùng để huấn luyện Omni \texttt{best} và UniAV. Tập \texttt{val\_seen} của HT-Step (510 video có đặc trưng, 2990 câu hỏi) là tập dev, nơi được phép chọn tham số và chọn biến thể chính. YouCook2~\cite{youcook2} là benchmark. Không mô hình nào được huấn luyện hay chọn trên YouCook2, và không video nào của YouCook2 trùng ID YouTube với tập train của hai mô hình hay với tập dev.
+
+\textbf{Câu hỏi và đáp án.} Mỗi câu hỏi là câu mô tả nguyên văn của một bước có nhãn. Nhiều video có bước cùng câu chữ, nên chế độ chính là \emph{multi-positive}: một video là đáp án đúng nếu nó có bước cùng câu chữ với câu hỏi (sau khi viết thường, bỏ dấu câu và gộp khoảng trắng). Chế độ \emph{strict} chỉ chấp nhận video gốc của câu hỏi.
+
+\textbf{Thang đo.} R@1 và R@5 của truy hồi video. VCMR R@1: video đứng đầu là đáp án đúng và đoạn trả về có tIoU từ 0,5 với một bước cùng câu chữ trong video đó. Hiệu giữa hai cấu hình đi kèm khoảng tin cậy 95\% bằng paired bootstrap theo video (1000 lần lấy mẫu, seed 0)~\cite{bootstrap}.
+
+\textbf{Các cách cắt để so sánh.} Ngoài R6 và R8, bài báo so với R0 (một vector cho cả video), R1 (trung bình các vector R6), R2 (cắt đều độ dài $L$, $L$ chọn để tổng số đoạn bằng R8), R3 (cắt đều thành đúng số đoạn R6 của video) và R7 (đoạn ground truth, cận trên). R2 và R3 tách tác dụng của ranh giới UniAV khỏi tác dụng của số đoạn.
+
+\textbf{Chọn trên dev, chấm một lần trên benchmark.} Trên dev, mọi cấu hình đã chấm đều được ghi lại. $\theta$, $L_{\min}$, $L_{\mathrm{fill}}$, $\beta$ và biến thể chính được chọn bằng các luật viết trước, rồi khoá trong một file cấu hình có mã băm. Trên benchmark, protocol được khoá và in mã băm trước khi chấm. Các tiêu chí thắng thua cũng được viết trước (Bảng~\ref{tab:bench}): một tiêu chí đạt khi cận dưới của khoảng tin cậy lớn hơn 0.
+
+\section{Thực nghiệm}
+\label{sec:exp}
+
+\subsection{Cài đặt}
+UniAV được huấn luyện lại với thầy Omni \texttt{best} từ code của nhóm (commit \texttt{77fc4fa}, cấu hình mặc định, chỉ đổi thầy). Omni \texttt{best} mã hoá các đoạn của tập dev trên GPU A100 và các đoạn của benchmark trên GPU L4. UniAV, cắt đoạn và chấm điểm chạy trên CPU.
+
+\subsection{Tập dev HT-Step: chọn tham số}
+Các lựa chọn theo luật viết trước:
+\begin{itemize}
+\item $\theta = 0{,}402$: số đoạn R6 trung bình mỗi video (5,888) gần nhất với số bước trung bình mỗi video của HT-Step train (5,910).
+\item $(L_{\min}, L_{\mathrm{fill}}) = (5, 10)$ giây: R@1 của UEMR-Lite trên R8 cao nhất trong lưới $\{3, 5\} \times \{8, 10, 15\}$ (58,56). Từ đó $L$ của R2 là 11,89 giây.
+\item $\beta = 1{,}0$: R@1 của UEMR-Full trên R8 cao nhất trong lưới $\{0;\,0{,}1;\,0{,}2;\,0{,}3;\,0{,}5;\,1{,}0\}$, lần lượt 59,60; 61,44; 61,30; 62,44; 63,21; 63,34. Giá trị này nằm ở biên trên của lưới.
+\item Biến thể chính là UEMR-Full vì cận dưới khoảng tin cậy của (U) $-$ (b) trên R8 lớn hơn 0 (Bảng~\ref{tab:pairs}).
+\end{itemize}
+
+\begin{table}[t]
+\caption{Tập dev HT-Step, multi-positive: R@1 của ba cột và VCMR R@1 của cột (b)}
+\label{tab:dev}
+\setlength{\tabcolsep}{3pt}
+\centering
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+Cắt & vec/video & (b) & (S) & (U) & VCMR (b) \\
+\hline
+R0 & 1,0 & 49,00 & 50,87 & 55,08 & -- \\
+R1 & 1,0 & 58,13 & 55,05 & 58,86 & -- \\
+R2 & 33,2 & 57,83 & 56,52 & 62,04 & 10,60 \\
+R3 & 5,9 & 53,38 & 55,89 & 57,99 & 4,41 \\
+R6 & 5,9 & 57,49 & 58,39 & 61,57 & 24,48 \\
+R8 & 33,2 & 59,60 & 58,56 & \textbf{63,34} & 15,92 \\
+\hline
+R7 (GT) & 5,9 & 65,05 & 66,62 & 70,54 & 56,05 \\
+\hline
+\multicolumn{6}{p{225pt}}{Số dev chỉ dùng để chọn tham số và lạc quan, vì checkpoint của hai mô hình và mọi tham số của UEMR đều được chọn trên tập này. C1 trên R8 đạt 58,90.}
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\caption{Tập dev HT-Step: hiệu R@1 multi-positive và khoảng tin cậy 95\%}
+\label{tab:pairs}
+\setlength{\tabcolsep}{3pt}
+\centering
+\begin{tabular}{|l|c|c|}
+\hline
+Cặp (cột (b) trừ khi ghi khác) & A $-$ B & CI 95\% \\
+\hline
+R8 $-$ R0 & +10,60 & [+7,24; +14,08] \\
+R8 $-$ R3 & +6,22 & [+3,74; +8,73] \\
+R8 $-$ R2 & +1,77 & [$-$0,53; +4,02] \\
+(U) $-$ (b), trên R8 & +3,75 & [+1,53; +5,98] \\
+(S) trên R8 $-$ (b) trên R0 & +9,57 & [+6,13; +13,08] \\
+C1 trên R8 $-$ (b) trên R6 & +1,40 & [$-$0,78; +3,70] \\
+VCMR R@1: R6 $-$ R3 & +20,07 & [+17,55; +22,59] \\
+\hline
+\end{tabular}
+\end{table}
+
+Bảng~\ref{tab:dev} và Bảng~\ref{tab:pairs} cho thấy trên dev:
+\begin{itemize}
+\item Cắt theo sự kiện hơn một vector cho mỗi video (R8 $-$ R0) và hơn cắt đều cùng số đoạn (R8 $-$ R3).
+\item R8 chưa hơn R2 có ý nghĩa thống kê. Trên dev, chưa tách được lợi ích của ranh giới UniAV khỏi lợi ích của việc có nhiều đoạn hơn. Ranh giới UniAV giúp rõ ở định vị khoảnh khắc (VCMR R6 $-$ R3).
+\item Cộng cột (S) vào cột (b) tăng R@1 ở mọi cách cắt trong Bảng~\ref{tab:dev}. UEMR-Lite, không chạy Omni phía video, cũng hơn một vector Omni cho mỗi video.
+\end{itemize}
+
+\subsection{Phân tích trên tập dev}
+\textbf{Đoạn lấp và ranh giới bổ trợ nhau.} Với 1687 câu hỏi có bước bị R6 bỏ sót (tIoU nhỏ hơn 0,3), R8 $-$ R6 là +5,69 [+2,36; +8,84]. Với 1303 câu hỏi có bước được R6 bắt, R6 $-$ R3 là +7,52 [+3,87; +11,14].
+
+\textbf{Hai cột sai ở những câu khác nhau.} Trên R8, chỉ cột (b) đúng ở hạng 1 với 459 câu, chỉ cột (S) đúng với 428 câu, và hệ số Spearman giữa thứ hạng của hai cột là 0,587. Giả thuyết của chúng tôi là sự bổ trợ này giải thích vì sao (U) hơn từng cột; chúng tôi chưa có phép kiểm nhân quả.
+
+\textbf{$\mathbf{h}_i$ phụ thuộc vào article.} Thay article đoán bằng một article ngẫu nhiên làm cột (S) trên R8 giảm 22,58 [19,71; 25,57] điểm R@1. Vector của bộ định vị vì vậy mang thông tin về công thức, và cũng nhạy với việc đoán sai công thức.
+
+\subsection{Benchmark YouCook2 (zero-shot)}
+Kho benchmark gồm 635 trong số 1500 video YouCook2 có annotation và có mp4. Việc trích đặc trưng dừng giữa chừng; các video được giữ là các video đã trích xong, theo thứ tự tên ID, không dựa vào nhãn hay kết quả. Câu hỏi chỉ lấy từ 635 video này. Tham số giữ nguyên như đã khoá trên dev.
+
+\begin{table}[t]
+\caption{Benchmark YouCook2, multi-positive, R@1: tiêu chí viết trước}
+\label{tab:bench}
+\setlength{\tabcolsep}{3pt}
+\centering
+\begin{tabular}{|l|p{78pt}|c|c|}
+\hline
+ & Cặp & A $-$ B & CI 95\% \\
+\hline
+K1 & UEMR $-$ R0 (b) & \multicolumn{2}{c|}{[CHỜ KẾT QUẢ BENCHMARK]} \\
+K2 & UEMR $-$ R3, cùng cột & \multicolumn{2}{c|}{[CHỜ KẾT QUẢ BENCHMARK]} \\
+K3 & VCMR: R6 $-$ R3 (b) & \multicolumn{2}{c|}{[CHỜ KẾT QUẢ BENCHMARK]} \\
+K4 & UEMR-Lite R8 $-$ R0 (b) & \multicolumn{2}{c|}{[CHỜ KẾT QUẢ BENCHMARK]} \\
+K5 & (U) $-$ (b), trên R8 & \multicolumn{2}{c|}{[CHỜ KẾT QUẢ BENCHMARK]} \\
+\hline
+\multicolumn{4}{p{225pt}}{UEMR là biến thể chính đã khoá (UEMR-Full, $\beta = 1{,}0$) trên R8. Một tiêu chí đạt khi cận dưới CI lớn hơn 0.}
+\end{tabular}
+\end{table}
+
+[CHỜ KẾT QUẢ BENCHMARK]: bảng R@1, R@5, VCMR R@1 của các cách cắt và các cột trên kho 635 video, và kết luận theo K1, K2.
+
+Chất lượng cắt của UniAV trên kho benchmark, chỉ để mô tả: recall của bước ground truth ở tIoU 0,3 / 0,5 / 0,7 là 37,99 / 24,86 / 13,67; trung bình 5,55 đoạn R6 mỗi video so với 7,82 bước ground truth.
+
+\section{Kết luận và hạn chế}
+UEMR dùng một chỉ mục đa vector cho cả truy hồi video lẫn định vị khoảnh khắc, với bộ định vị chưng cất từ chính mô hình truy hồi. Trên tập dev HT-Step, các lựa chọn đã khoá là $\theta = 0{,}402$, $(L_{\min}, L_{\mathrm{fill}}) = (5, 10)$ giây và UEMR-Full với $\beta = 1{,}0$. [CHỜ KẾT QUẢ BENCHMARK]: kết luận về hiệu quả zero-shot chỉ được viết khi tiêu chí K1, K2 trên YouCook2 đạt.
+
+Các hạn chế đã biết:
+\begin{itemize}
+\item Số trên dev lạc quan, và $\beta$ được chọn ở biên của lưới.
+\item Trên dev, R8 chưa hơn R2 có ý nghĩa thống kê.
+\item Lúc huấn luyện UniAV luôn được cho article đúng; lúc dùng nó phải tự đoán. Article đoán sai trên miền khác có thể làm cột (S) yếu đi; đây là giả thuyết, chưa đo.
+\item Kho benchmark chỉ gồm 635 trong 1500 video.
+\item Mỗi cấu hình chạy một lần với một seed. Khoảng tin cậy chỉ phản ánh biến thiên theo video.
+\item Dữ liệu pretrain của mô hình truy hồi gốc cũng lấy từ YouTube, nên không loại trừ hết khả năng trùng video với benchmark.
+\end{itemize}
+
+\section*{Lời cảm ơn}
+(Điền lời cảm ơn nếu có.)
+
+\begin{thebibliography}{00}
+\bibitem{tvr} J. Lei, L. Yu, T. L. Berg, and M. Bansal, ``TVR: A large-scale dataset for video-subtitle moment retrieval,'' in \textit{Proc. ECCV}, 2020, pp. 447--463.
+\bibitem{omniretriever} Y. Liu \textit{et al.}, ``OmniRetriever: Any-to-any audio-video-text retrieval via fusion-as-teacher distillation,'' arXiv:2605.26641, 2026.
+\bibitem{colbert} O. Khattab and M. Zaharia, ``ColBERT: Efficient and effective passage search via contextualized late interaction over BERT,'' in \textit{Proc. SIGIR}, 2020, pp. 39--48.
+\bibitem{uniav} T. Geng, T. Wang, Y. Zhang, J. Duan, W. Guan, F. Zheng, and L. Shao, ``UniAV: Unified audio-visual perception for multi-task video event localization,'' arXiv:2404.03179, 2024.
+\bibitem{htstep} T. Afouras, E. Mavroudi, T. Nagarajan, H. Wang, and L. Torresani, ``HT-Step: Aligning instructional articles with how-to videos,'' in \textit{Proc. NeurIPS Datasets and Benchmarks Track}, 2023.
+\bibitem{youcook2} L. Zhou, C. Xu, and J. J. Corso, ``Towards automatic learning of procedures from web instructional videos,'' in \textit{Proc. AAAI}, 2018, pp. 7590--7598.
+\bibitem{clip4clip} H. Luo, L. Ji, M. Zhong, Y. Chen, W. Lei, N. Duan, and T. Li, ``CLIP4Clip: An empirical study of CLIP for end to end video clip retrieval and captioning,'' \textit{Neurocomputing}, vol. 508, pp. 293--304, 2022.
+\bibitem{clip} A. Radford \textit{et al.}, ``Learning transferable visual models from natural language supervision,'' in \textit{Proc. ICML}, 2021.
+\bibitem{wave} ``WAVE: Learning unified and versatile audio-visual embeddings with multimodal LLM,'' 2025.
+\bibitem{actionformer} C. Zhang, J. Wu, and Y. Li, ``ActionFormer: Localizing moments of actions with transformers,'' in \textit{Proc. ECCV}, 2022, pp. 492--510.
+\bibitem{howto100m} A. Miech, D. Zhukov, J.-B. Alayrac, M. Tapaswi, I. Laptev, and J. Sivic, ``HowTo100M: Learning a text-video embedding by watching hundred million narrated video clips,'' in \textit{Proc. ICCV}, 2019, pp. 2630--2640.
+\bibitem{kd} G. Hinton, O. Vinyals, and J. Dean, ``Distilling the knowledge in a neural network,'' arXiv:1503.02531, 2015.
+\bibitem{internvideo2} Y. Wang \textit{et al.}, ``InternVideo2: Scaling foundation models for multimodal video understanding,'' in \textit{Proc. ECCV}, 2024.
+\bibitem{beats} S. Chen \textit{et al.}, ``BEATs: Audio pre-training with acoustic tokenizers,'' in \textit{Proc. ICML}, 2023.
+\bibitem{bootstrap} B. Efron and R. J. Tibshirani, \textit{An Introduction to the Bootstrap}. New York, NY, USA: Chapman \& Hall, 1993.
+\end{thebibliography}
+
+\end{document}
