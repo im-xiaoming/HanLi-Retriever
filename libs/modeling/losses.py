@@ -107,13 +107,45 @@ def ctr_diou_loss_1d(
     return loss, iouk
 
 
+class TeacherQueue:
+    """Teacher vectors of the last batches, extra negatives of the omni InfoNCE.
+
+    The teachers are fixed vectors read from disk (not computed by the model), so an old entry is as valid as a
+    new one: no momentum encoder is needed, unlike MoCo. A plain attribute of the model (not a buffer): it is
+    not saved in the checkpoints.
+    """
+
+    def __init__(self, size):
+        self.size = size
+        self.bank = None   # (size, 3584), allocated at the first push
+        self.ptr = 0       # next row to write
+        self.n = 0         # filled rows
+
+    def get(self):
+        return None if self.n == 0 else self.bank[:self.n]
+
+    @torch.no_grad()
+    def push(self, x):     # (M, 3584)
+        if self.size <= 0 or len(x) == 0:
+            return
+        if self.bank is None:
+            self.bank = x.new_zeros(self.size, x.shape[1])
+        x = x[-self.size:].detach()
+        idx = (self.ptr + torch.arange(len(x), device=x.device)) % self.size
+        self.bank[idx] = x.to(self.bank.dtype)
+        self.ptr = int((self.ptr + len(x)) % self.size)
+        self.n = min(self.n + len(x), self.size)
+
+
 def omni_distill_loss(
     students,      # (N, 3584) student vectors, L2-normalised
     teachers,      # (M, 3584) the teacher vectors of the batch, L2-normalised
     target,        # (N,) for every student, the row of `teachers` that is its own teacher
-    temperature,   # softmax temperature (0.05)
+    temperature,   # softmax temperature of the kd (0.05)
+    bank=None,     # (Q, 3584) teachers of earlier batches (TeacherQueue), extra negatives of the nce, or None
+    nce_temperature=0.05,
 ):
-    """Distillation of the OmniRetriever vectors (teachers) into the model (students). Two losses:
+    """Distillation of the OmniRetriever vectors (teachers) into the model (students). Three losses:
 
     kd  : KL distillation. Every vector (student or teacher) gets a similarity distribution over the teachers of
           the batch: softmax(similarities / temperature). The student's distribution must match the one of its own
@@ -121,10 +153,14 @@ def omni_distill_loss(
           (a segment of the same step, similar to its teacher, gets a high probability too).
     cos : 1 - cosine(student, own teacher). Pulls every student onto its teacher, including the part that every
           teacher shares (the kd ignores it), so the student vector really is close to the teacher vector.
+    nce : InfoNCE, student -> teachers: its own teacher must be the closest among the teachers of the batch and of
+          the queue (one-hot target, where kd copies the teacher's soft distribution). This is what OmniR@1
+          measures (own teacher = closest of all validation teachers). A candidate (almost) equal to the own
+          teacher (cos > 0.999: the same segment again) is not a negative.
     """
     if len(students) == 0:   # no segment with a teacher in this batch (very rare): no loss
         zero = students.sum() * 0.0
-        return {'kd': zero, 'cos': zero}
+        return {'kd': zero, 'cos': zero, 'nce': zero}
 
     own_teachers = teachers[target]                                                  # (N, 3584)
 
@@ -134,8 +170,14 @@ def omni_distill_loss(
                        log_target=True, reduction='batchmean')
 
     cos_loss = (1.0 - F.cosine_similarity(students, own_teachers, dim=-1)).mean()
-    return {'kd': kd_loss, 'cos': cos_loss}
 
+    cands = teachers if bank is None else torch.cat((teachers, bank.to(teachers.dtype)))   # (M + Q, 3584)
+    logits = students @ cands.t() / nce_temperature                                  # (N, M + Q)
+    with torch.no_grad():
+        same = own_teachers @ cands.t() > 0.999                                      # (N, M + Q) duplicates
+        same[torch.arange(len(target), device=target.device), target] = False       # but not the target itself
+    nce_loss = F.cross_entropy(logits.masked_fill(same, float('-inf')), target)
+    return {'kd': kd_loss, 'cos': cos_loss, 'nce': nce_loss}
 
 
 def omni_losses(
@@ -148,6 +190,8 @@ def omni_losses(
     feat0,       # (B, D, T) level-0 pyramid features, read by the span head
     len0,        # (B,) real level-0 steps of every video
     temperature=0.05,
+    queue=None,      # TeacherQueue: teachers of earlier batches, extra negatives of the nce; the batch is added after
+    nce_temperature=0.05,
 ):
     """Distillation of the OmniRetriever vectors (teachers), for the point head and the span head.
 
@@ -157,7 +201,8 @@ def omni_losses(
         its segment's teacher.
     3. Span head: every GT segment (left after the crop) that has a teacher gets one student vector from the
         span head; its target is the row of its own teacher.
-    Both are trained by omni_distill_loss (KL distillation over the M teachers + cosine to the own teacher).
+    Both are trained by omni_distill_loss (KL distillation over the M teachers, cosine to the own teacher and
+    InfoNCE over the M teachers + the queue).
     """
     dev = omni_em.device
 
@@ -174,7 +219,8 @@ def omni_losses(
     target = teacher_row[video, segment]                # (N',) row of its teacher, -1 = no teacher
     keep = target >= 0
     students = omni_em[video[keep], point[keep]]        # (N, 3584)
-    point_losses = omni_distill_loss(students, teachers, target[keep], temperature)
+    bank = None if queue is None else queue.get()
+    point_losses = omni_distill_loss(students, teachers, target[keep], temperature, bank, nce_temperature)
 
     # 3. span head
     span_students, span_target = [], []
@@ -184,5 +230,8 @@ def omni_losses(
         segments = x['segments'].to(dev).float()[keep]  # (n', 2) start and end, in level-0 steps
         span_students.append(span(feat0[b], int(len0[b]), segments))   # (n', 3584)
         span_target.append(target[keep])
-    span_losses = omni_distill_loss(torch.cat(span_students), teachers, torch.cat(span_target), temperature)
+    span_losses = omni_distill_loss(torch.cat(span_students), teachers, torch.cat(span_target), temperature,
+                                    bank, nce_temperature)
+    if queue is not None:
+        queue.push(teachers)
     return point_losses, span_losses

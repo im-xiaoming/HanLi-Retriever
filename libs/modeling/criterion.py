@@ -54,7 +54,8 @@ def event_losses(
     #                                       cosin matrix
 
     # <<<<<<<<<<<<<<<< Omni >>>>>>>>>>>>>>
-    omni_point, omni_span = omni_losses(model.omni_span, video_list, pos, gt_cls, omni_em, feat0, len0)
+    omni_point, omni_span = omni_losses(model.omni_span, video_list, pos, gt_cls, omni_em, feat0, len0,
+                                        w['omni_temperature'], model.omni_queue, w['omni_nce_temperature'])
 
     # =========================================== Span Loss =========================================
     qs, gs = [], []
@@ -78,10 +79,12 @@ def event_losses(
              + w['loss_weight_emb'] * emb_loss
              + w['loss_weight_omni_kd'] * omni_point['kd'] + w['loss_weight_omni_cos'] * omni_point['cos']
              + w['loss_weight_omni_kd'] * omni_span['kd'] + w['loss_weight_omni_cos'] * omni_span['cos']
+             + w['loss_weight_omni_nce'] * (omni_point['nce'] + omni_span['nce'])
              + w['loss_weight_span'] * span_loss
              + w['loss_weight_article'] * art_loss)
 
     return {'ev_loss': ev_loss, 'reg_loss': rg_loss, 'iou_loss': iou_loss, 'emb_loss': emb_loss,
             'omni_point_kd': omni_point['kd'], 'omni_point_cos': omni_point['cos'],
-            'omni_span_kd': omni_span['kd'], 'omni_span_cos': omni_span['cos'], 'span_loss': span_loss,
+            'omni_span_kd': omni_span['kd'], 'omni_span_cos': omni_span['cos'],
+            'omni_point_nce': omni_point['nce'], 'omni_span_nce': omni_span['nce'], 'span_loss': span_loss,
             'art_loss': art_loss, 'final_loss': total}

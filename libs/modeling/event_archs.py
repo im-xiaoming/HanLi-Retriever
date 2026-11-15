@@ -4,6 +4,7 @@ from torch.nn import functional as F
 
 from .models import register_multimodal_meta_arch, make_multimodal_backbone
 from .criterion import event_losses
+from .losses import TeacherQueue
 from .postprocess import event_inference
 from .heads import (
     EventHead, BoundaryHead, EmbedHead, SegmentContext, ArticleCondition, ArticleHead, OmniSpanHead
@@ -71,6 +72,8 @@ class EventCaptionTransformer(nn.Module):
         self.omni_span = OmniSpanHead(D, omni_head_dim, pool_queries, omni_span_hidden)
         # mean of the train teacher vectors (the part every segment shares), for the OmniCosC metric; set by train.py
         self.omni_teacher_mean = None
+        # teachers of the last batches, extra negatives of the omni InfoNCE (not saved in the checkpoints)
+        self.omni_queue = TeacherQueue(train_cfg['omni_queue_size'])
 
     def set_step_pool(
         self,
