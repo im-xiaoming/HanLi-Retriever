@@ -319,7 +319,7 @@ Nearest neighbor ($k = 50$) & 52,76 \\
 
 \section{Ứng dụng: truy hồi bước trong kho video}
 \label{sec:retrieval}
-Cho một câu mô tả một bước nấu ăn, hệ thống phải tìm video chứa bước đó trong một kho và chỉ ra đoạn của bước, tức video corpus moment retrieval (VCMR)~\cite{tvr}. Một vector cho cả video làm mờ từng bước. Chúng tôi cắt video theo bước bằng mô hình ở Mục III, giữ nhiều vector cho mỗi video và chấm bằng MaxSim (điểm của video là điểm cao nhất trong các đoạn), tương tự late interaction của ColBERT~\cite{colbert}.
+Cho một câu mô tả hoặc một video chứa một bước nấu ăn, hệ thống phải tìm video chứa bước đó trong một kho và chỉ ra đoạn của bước, tức video corpus moment retrieval (VCMR)~\cite{tvr}. Một vector cho cả video làm mờ từng bước. Chúng tôi cắt video theo bước bằng mô hình ở Mục III, giữ nhiều vector cho mỗi video và chấm bằng MaxSim (điểm của video là điểm cao nhất trong các đoạn), tương tự late interaction của ColBERT~\cite{colbert}.
 
 \subsection{Mô hình truy hồi OmniRetriever-HT}
 OmniRetriever-HT bắt đầu từ OmniRetriever-7B~\cite{omniretriever}, tức WAVE-7B~\cite{wave} kèm adapter LoRA đã công bố, rồi tinh chỉnh tiếp adapter này trên 43261 đoạn bước của 6993 video HT-Step train: batch 32, learning rate $10^{-4}$, tối đa 2 epoch, checkpoint chọn theo R@1 T$\to$AV trên val\_seen. Chỉ các ma trận LoRA (6.881.280 tham số) được huấn luyện; WAVE-7B, bộ mã hoá âm thanh và các head chiếu của OmniRetriever giữ đóng băng. Bảng~\ref{tab:ret_omni} so hai mô hình trên val\_seen. Trên OmniRetriever-Bench, bản tinh chỉnh thấp hơn bản gốc ở cả 12 hướng truy hồi, tức mô hình đã mất một phần năng lực chung.
