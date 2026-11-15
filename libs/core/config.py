@@ -21,7 +21,7 @@ cfg = {
         'default_fps': 16,
         'max_seq_len': 256,      # every video is resampled to 256 steps
         'trunc_thresh': 0.25,
-        'crop_ratio': [0.9, 1.0],
+        'crop_ratio': [0.95, 1.0],
         'num_classes': 48,       # at most 48 GT segments per video (none of the videos with features has more)
         'omni_emb_dim': 3584,
     },
