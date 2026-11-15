@@ -25,7 +25,6 @@ class EventCaptionTransformer(nn.Module):
         embd_with_ln,        # LayerNorm after the embedding convs
         head_dim,            # channels in every head, also the size D of the step / segment vectors
         omni_head_dim,       # size of the OmniRetriever vectors (3584)
-        regression_range,   # each level handles the segments whose largest distance to a boundary falls in this range
         head_num_layers,     # conv layers of every head
         head_kernel_size,    # kernel size of the heads
         head_with_ln,        # LayerNorm in the heads
