@@ -1,16 +1,5 @@
 \relax 
 \providecommand\hyper@newdestlabel[2]{}
-\providecommand\HyperFirstAtBeginDocument{\AtBeginDocument}
-\HyperFirstAtBeginDocument{\ifx\hyper@anchor\@undefined
-\global\let\oldnewlabel\newlabel
-\gdef\newlabel#1#2{\newlabelxx{#1}#2}
-\gdef\newlabelxx#1#2#3#4#5#6{\oldnewlabel{#1}{{#2}{#3}}}
-\AtEndDocument{\ifx\hyper@anchor\@undefined
-\let\newlabel\oldnewlabel
-\fi}
-\fi}
-\global\let\hyper@last\relax 
-\gdef\HyperFirstAtBeginDocument#1{#1}
 \providecommand\HyField@AuxAddToFields[1]{}
 \providecommand\HyField@AuxAddToCoFields[2]{}
 \citation{htstep}
@@ -39,14 +28,14 @@
 \citation{moco}
 \citation{internvideo2}
 \citation{beats}
-\citation{omniretriever}
-\citation{actionformer}
-\citation{uniav}
 \@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Ví dụ trên một video của tập val\_seen (``Make Wonton Soup'', 4 phút). \emph  {Hàng trên}: đoạn từ 2:40 đến 3:50, nơi chứa các bước của recipe; thanh \textcolor {red}{đỏ} là đoạn ground truth kèm tên bước, thanh và khung \textcolor {green!50!black}{xanh} là đoạn mô hình dự đoán kèm bước được chọn. Mô hình định vị đúng ba đoạn (IoU 0,83; 0,91; 0,73) và chọn đúng bước cho cả ba, nhưng bỏ sót lần ``Boil the wontons'' thứ hai ở cuối video. \emph  {Hàng dưới}: embedding 3584 chiều của từng đoạn, do teacher OmniRetriever (7 tỉ tham số) và do mô hình của chúng tôi (137 triệu tham số) tạo ra; để dễ nhìn, mỗi embedding được trừ trung bình rồi gộp thành 72 ô. Hai embedding có mean-centered cosine từ 0,76 đến 0,85.}}{2}{figure.1}\protected@file@percent }
 \newlabel{fig:teaser}{{1}{2}{Ví dụ trên một video của tập val\_seen (``Make Wonton Soup'', 4 phút). \emph {Hàng trên}: đoạn từ 2:40 đến 3:50, nơi chứa các bước của recipe; thanh \textcolor {red}{đỏ} là đoạn ground truth kèm tên bước, thanh và khung \textcolor {green!50!black}{xanh} là đoạn mô hình dự đoán kèm bước được chọn. Mô hình định vị đúng ba đoạn (IoU 0,83; 0,91; 0,73) và chọn đúng bước cho cả ba, nhưng bỏ sót lần ``Boil the wontons'' thứ hai ở cuối video. \emph {Hàng dưới}: embedding 3584 chiều của từng đoạn, do teacher OmniRetriever (7 tỉ tham số) và do mô hình của chúng tôi (137 triệu tham số) tạo ra; để dễ nhìn, mỗi embedding được trừ trung bình rồi gộp thành 72 ô. Hai embedding có mean-centered cosine từ 0,76 đến 0,85}{figure.1}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {II}Công trình liên quan}{2}{section.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {III}Phương pháp}{2}{section.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-A}}Dữ liệu vào và bài toán}{2}{subsection.3.1}\protected@file@percent }
+\citation{omniretriever}
+\citation{actionformer}
+\citation{uniav}
 \citation{htstep}
 \citation{focal}
 \citation{diou}
@@ -54,26 +43,25 @@
 \newlabel{fig:backbone}{{2}{3}{Backbone audio-visual. Hai chuỗi feature đầu vào (visual feature từ InternVideo2 và audio feature từ BEATs, mỗi chuỗi $768 \times T$ với $T = 256$) được xử lý bởi hai luồng riêng có cùng cấu trúc: hai lớp Conv1D để chiếu feature về 512 kênh, ba khối transformer ở độ phân giải gốc, rồi năm khối transformer, mỗi khối giảm độ dài chuỗi đi một nửa. Kết quả là một temporal pyramid sáu tầng với độ dài $T, T/2, \ldots , T/32$: tầng mịn phù hợp với các bước ngắn, tầng thô phù hợp với các bước dài. Ở mỗi tầng, hai luồng trao đổi thông tin qua cross-attention (mũi tên đỏ), để âm thanh bổ sung cho hình ảnh và ngược lại. Cuối cùng, feature của hai luồng được nối lại thành $\mathbf {F}_l$ có 1024 kênh ở mỗi tầng $l$, làm đầu vào cho recipe conditioning và các head}{figure.2}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Backbone audio-visual}{3}{subsection.3.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-C}}Recipe conditioning}{3}{subsection.3.3}\protected@file@percent }
-\newlabel{eq:artc}{{1}{3}{Recipe conditioning}{equation.3.1}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-D}}Localization head và step classification}{3}{subsection.3.4}\protected@file@percent }
+\newlabel{eq:artc}{{1}{3}{Recipe conditioning}{equation.1}{}}
 \@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Recipe conditioning. Văn bản các bước của recipe ($C$ bước, mỗi bước một vector 512 chiều) được chiếu lên 1024 chiều, chuẩn hoá bằng LayerNorm và cộng với embedding thứ tự của bước trong recipe, tạo thành key và value. Feature $\mathbf  {F}_l$ của mỗi tầng, sau LayerNorm, đóng vai trò query. Nhờ multi-head attention (8 head), mỗi thời điểm trong video tìm những bước của recipe giống nó nhất và lấy thông tin từ các bước đó. Kết quả qua một lớp chiếu ra, nhân với mask để bỏ các vị trí padding, rồi được cộng residual vào $\mathbf  {F}_l$, cho feature $\mathbf  {F}'_l$. Lớp chiếu ra được khởi tạo bằng 0, nên lúc bắt đầu huấn luyện khối này chưa làm thay đổi feature và chỉ dần học cách dùng văn bản. Cùng một khối được dùng cho cả sáu tầng của pyramid.}}{3}{figure.3}\protected@file@percent }
 \newlabel{fig:recipecond}{{3}{3}{Recipe conditioning. Văn bản các bước của recipe ($C$ bước, mỗi bước một vector 512 chiều) được chiếu lên 1024 chiều, chuẩn hoá bằng LayerNorm và cộng với embedding thứ tự của bước trong recipe, tạo thành key và value. Feature $\mathbf {F}_l$ của mỗi tầng, sau LayerNorm, đóng vai trò query. Nhờ multi-head attention (8 head), mỗi thời điểm trong video tìm những bước của recipe giống nó nhất và lấy thông tin từ các bước đó. Kết quả qua một lớp chiếu ra, nhân với mask để bỏ các vị trí padding, rồi được cộng residual vào $\mathbf {F}_l$, cho feature $\mathbf {F}'_l$. Lớp chiếu ra được khởi tạo bằng 0, nên lúc bắt đầu huấn luyện khối này chưa làm thay đổi feature và chỉ dần học cách dùng văn bản. Cùng một khối được dùng cho cả sáu tầng của pyramid}{figure.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-D}}Localization head và step classification}{3}{subsection.3.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-E}}Recipe head}{3}{subsection.3.5}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-F}}Distillation cho multimodal embedding}{3}{subsection.3.6}\protected@file@percent }
 \citation{baglm,hsd}
 \@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Cấu trúc bên trong của các head chính. \emph  {Event head} và \emph  {boundary head} là hai localization head, chạy trên feature $\mathbf  {F}'_l$ của mọi tầng với trọng số dùng chung. Mỗi head có hai lớp Conv1D (kernel 3) kèm LayerNorm và ReLU; event head kết thúc bằng một Conv1D cho xác suất $p$ rằng điểm đó nằm trong một bước, còn boundary head tách thành hai nhánh: một nhánh cho khoảng cách $(d_s, d_e)$ từ điểm đó tới hai biên của bước (nhân với hệ số $s_l$ học được của từng tầng), một nhánh cho điểm chất lượng $q$ ước lượng IoU giữa đoạn dự đoán và đoạn thật. \emph  {Point-wise head} và \emph  {segment-wise head} (màu tím) được distill từ OmniRetriever. Point-wise head cho mỗi điểm một embedding 3584 chiều, qua một Conv1D cộng với nhánh skip $1{\times }1$ từ $\mathbf  {F}'_l$. Segment-wise head biết trước thời điểm đầu và cuối của đoạn, gom mọi điểm của sáu tầng nằm trong đoạn (cộng embedding của tầng), rồi tạo một embedding cho cả đoạn bằng attention pooling với 8 query và MLP, song song với một nhánh tuyến tính trên trung bình các điểm. Cả hai head chỉ dự đoán phần lệch $\mathbf  {r}$ quanh trung bình $\boldsymbol  {\mu }$ của các teacher embedding, rồi chuẩn hoá L2. Chữ đỏ in nghiêng là loss của mỗi đầu ra.}}{4}{figure.4}\protected@file@percent }
 \newlabel{fig:heads}{{4}{4}{Cấu trúc bên trong của các head chính. \emph {Event head} và \emph {boundary head} là hai localization head, chạy trên feature $\mathbf {F}'_l$ của mọi tầng với trọng số dùng chung. Mỗi head có hai lớp Conv1D (kernel 3) kèm LayerNorm và ReLU; event head kết thúc bằng một Conv1D cho xác suất $p$ rằng điểm đó nằm trong một bước, còn boundary head tách thành hai nhánh: một nhánh cho khoảng cách $(d_s, d_e)$ từ điểm đó tới hai biên của bước (nhân với hệ số $s_l$ học được của từng tầng), một nhánh cho điểm chất lượng $q$ ước lượng IoU giữa đoạn dự đoán và đoạn thật. \emph {Point-wise head} và \emph {segment-wise head} (màu tím) được distill từ OmniRetriever. Point-wise head cho mỗi điểm một embedding 3584 chiều, qua một Conv1D cộng với nhánh skip $1{\times }1$ từ $\mathbf {F}'_l$. Segment-wise head biết trước thời điểm đầu và cuối của đoạn, gom mọi điểm của sáu tầng nằm trong đoạn (cộng embedding của tầng), rồi tạo một embedding cho cả đoạn bằng attention pooling với 8 query và MLP, song song với một nhánh tuyến tính trên trung bình các điểm. Cả hai head chỉ dự đoán phần lệch $\mathbf {r}$ quanh trung bình $\boldsymbol {\mu }$ của các teacher embedding, rồi chuẩn hoá L2. Chữ đỏ in nghiêng là loss của mỗi đầu ra}{figure.4}{}}
-\newlabel{eq:dev}{{2}{4}{Distillation cho multimodal embedding}{equation.3.2}{}}
-\newlabel{eq:kd}{{3}{4}{Distillation cho multimodal embedding}{equation.3.3}{}}
-\newlabel{eq:cos}{{4}{4}{Distillation cho multimodal embedding}{equation.3.4}{}}
-\newlabel{eq:nce}{{5}{4}{Distillation cho multimodal embedding}{equation.3.5}{}}
+\newlabel{eq:dev}{{2}{4}{Distillation cho multimodal embedding}{equation.2}{}}
+\newlabel{eq:kd}{{3}{4}{Distillation cho multimodal embedding}{equation.3}{}}
+\newlabel{eq:cos}{{4}{4}{Distillation cho multimodal embedding}{equation.4}{}}
+\newlabel{eq:nce}{{5}{4}{Distillation cho multimodal embedding}{equation.5}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-G}}Ridge regression lúc inference}{4}{subsection.3.7}\protected@file@percent }
-\newlabel{eq:ridge}{{6}{4}{Ridge regression lúc inference}{equation.3.6}{}}
+\newlabel{eq:ridge}{{6}{4}{Ridge regression lúc inference}{equation.6}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-H}}Loss tổng}{4}{subsection.3.8}\protected@file@percent }
-\newlabel{eq:total}{{7}{4}{Loss tổng}{equation.3.7}{}}
+\newlabel{eq:total}{{7}{4}{Loss tổng}{equation.7}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {IV}Thực nghiệm}{4}{section.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}Dữ liệu}{4}{subsection.4.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-B}}Thang đo}{4}{subsection.4.2}\protected@file@percent }
 \citation{htstep}
 \citation{vina}
 \citation{baglm,hsd}
@@ -86,6 +74,7 @@
 \citation{hsd}
 \@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces Kết quả của mô hình đầy đủ trên val\_seen (510 video)}}{5}{table.1}\protected@file@percent }
 \newlabel{tab:main}{{I}{5}{Kết quả của mô hình đầy đủ trên val\_seen (510 video)}{table.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-B}}Thang đo}{5}{subsection.4.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-C}}Cài đặt}{5}{subsection.4.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-D}}Kết quả chính}{5}{subsection.4.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-E}}So sánh với các công trình khác}{5}{subsection.4.5}\protected@file@percent }
@@ -93,7 +82,8 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-G}}Giới hạn của OmniCosC}{5}{subsection.4.7}\protected@file@percent }
 \citation{tvr}
 \citation{colbert}
-\citation{youcook2}
+\citation{omniretriever}
+\citation{wave}
 \@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces So sánh mAP article grounding với các công trình khác}}{6}{table.2}\protected@file@percent }
 \newlabel{tab:sota}{{II}{6}{So sánh mAP article grounding với các công trình khác}{table.2}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {III}{\ignorespaces Thêm dần từng thành phần (val\_seen, 510 video)}}{6}{table.3}\protected@file@percent }
@@ -101,20 +91,22 @@
 \@writefile{lot}{\contentsline {table}{\numberline {IV}{\ignorespaces OmniCosC của ridge regression với các đầu vào khác nhau}}{6}{table.4}\protected@file@percent }
 \newlabel{tab:ceiling}{{IV}{6}{OmniCosC của ridge regression với các đầu vào khác nhau}{table.4}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-H}}Độ tin cậy của kết quả}{6}{subsection.4.8}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {V}UEMR: truy hồi bước trong kho video}{6}{section.5}\protected@file@percent }
-\newlabel{sec:uemr}{{V}{6}{UEMR: truy hồi bước trong kho video}{section.5}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-A}}Chỉ mục và chấm điểm}{6}{subsection.5.1}\protected@file@percent }
-\newlabel{eq:uemr_full}{{8}{6}{Chỉ mục và chấm điểm}{equation.5.8}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-B}}Giao thức đánh giá}{6}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {V}Ứng dụng: truy hồi bước trong kho video}{6}{section.5}\protected@file@percent }
+\newlabel{sec:retrieval}{{V}{6}{Ứng dụng: truy hồi bước trong kho video}{section.5}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {V}{\ignorespaces OmniRetriever gốc và OmniRetriever-HT trên val\_seen}}{6}{table.5}\protected@file@percent }
+\newlabel{tab:ret_omni}{{V}{6}{OmniRetriever gốc và OmniRetriever-HT trên val\_seen}{table.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-A}}Mô hình truy hồi OmniRetriever-HT}{6}{subsection.5.1}\protected@file@percent }
+\citation{youcook2}
 \citation{bootstrap}
-\@writefile{lot}{\contentsline {table}{\numberline {V}{\ignorespaces Bốn biến thể UEMR trên cùng đoạn R8}}{7}{table.5}\protected@file@percent }
-\newlabel{tab:uemr_variants}{{V}{7}{Bốn biến thể UEMR trên cùng đoạn R8}{table.5}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-C}}Kết quả trên tập dev}{7}{subsection.5.3}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {VI}{\ignorespaces UEMR trên tập dev, multi-positive: R@1 của ba cột và VCMR R@1 của cột (b)}}{7}{table.6}\protected@file@percent }
-\newlabel{tab:uemr_dev}{{VI}{7}{UEMR trên tập dev, multi-positive: R@1 của ba cột và VCMR R@1 của cột (b)}{table.6}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {VII}{\ignorespaces UEMR trên tập dev: hiệu R@1 multi-positive và khoảng tin cậy 95\%}}{7}{table.7}\protected@file@percent }
-\newlabel{tab:uemr_pairs}{{VII}{7}{UEMR trên tập dev: hiệu R@1 multi-positive và khoảng tin cậy 95\%}{table.7}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-D}}Benchmark YouCook2 (zero-shot)}{7}{subsection.5.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {VI}{\ignorespaces Các cách cắt video (số vector mỗi video đo trên dev)}}{7}{table.6}\protected@file@percent }
+\newlabel{tab:ret_cuts}{{VI}{7}{Các cách cắt video (số vector mỗi video đo trên dev)}{table.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-B}}Cách cắt và chấm điểm}{7}{subsection.5.2}\protected@file@percent }
+\newlabel{eq:ret_score}{{8}{7}{Cách cắt và chấm điểm}{equation.8}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-C}}Giao thức đánh giá}{7}{subsection.5.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {VII}{\ignorespaces Tập dev, multi-positive: R@1 của ba cách chấm và VCMR R@1 của cách chấm Omni}}{7}{table.7}\protected@file@percent }
+\newlabel{tab:ret_dev}{{VII}{7}{Tập dev, multi-positive: R@1 của ba cách chấm và VCMR R@1 của cách chấm Omni}{table.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-D}}Kết quả trên tập dev}{7}{subsection.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-E}}Benchmark YouCook2 (zero-shot)}{7}{subsection.5.5}\protected@file@percent }
 \bibcite{htstep}{1}
 \bibcite{howto100m}{2}
 \bibcite{actionformer}{3}
@@ -140,8 +132,8 @@
 \bibcite{colbert}{23}
 \bibcite{youcook2}{24}
 \bibcite{bootstrap}{25}
-\@writefile{lot}{\contentsline {table}{\numberline {VIII}{\ignorespaces UEMR trên YouCook2, multi-positive, R@1: tiêu chí viết trước}}{8}{table.8}\protected@file@percent }
-\newlabel{tab:uemr_bench}{{VIII}{8}{UEMR trên YouCook2, multi-positive, R@1: tiêu chí viết trước}{table.8}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {VIII}{\ignorespaces Hiệu R@1 multi-positive và CI 95\% trên dev và YouCook2}}{8}{table.8}\protected@file@percent }
+\newlabel{tab:ret_pairs}{{VIII}{8}{Hiệu R@1 multi-positive và CI 95\% trên dev và YouCook2}{table.8}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {VI}Kết luận}{8}{section.6}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{T\`ai li\d \ecircumflex u}{8}{section*.2}\protected@file@percent }
 \gdef \@abspage@last{8}
