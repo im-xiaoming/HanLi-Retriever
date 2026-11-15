@@ -2,6 +2,8 @@ import torch
 from torch.nn import functional as F
 from torch import Tensor
 
+from .heads import pad_segments
+
 
 def info_NCE_loss(logits, C, targets, scale):
     return F.cross_entropy(scale * logits @  C.t(), targets)
@@ -107,24 +109,43 @@ def ctr_diou_loss_1d(
     return loss, iouk
 
 
+class TeacherQueue:
+    
+    def __init__(self, size):
+        self.size = size
+        self.bank = None   # (size, 3584), allocated at the first push
+        self.ptr = 0       # next row to write
+        self.n = 0         # filled rows
+
+    def get(self):
+        return None if self.n == 0 else self.bank[:self.n]
+
+    @torch.no_grad()
+    def push(self, x):     # (M, 3584)
+        if self.size <= 0 or len(x) == 0:
+            return
+        if self.bank is None:
+            self.bank = x.new_zeros(self.size, x.shape[1])
+        x = x[-self.size:].detach()
+        idx = (self.ptr + torch.arange(len(x), device=x.device)) % self.size
+        self.bank[idx] = x.to(self.bank.dtype)
+        self.ptr = int((self.ptr + len(x)) % self.size)
+        self.n = min(self.n + len(x), self.size)
+
+
 def omni_distill_loss(
     students,      # (N, 3584) student vectors, L2-normalised
     teachers,      # (M, 3584) the teacher vectors of the batch, L2-normalised
     target,        # (N,) for every student, the row of `teachers` that is its own teacher
-    temperature,   # softmax temperature (0.05)
+    temperature,   # softmax temperature of the kd (0.05)
+    bank=None,     # (Q, 3584) teachers of earlier batches (TeacherQueue), extra negatives of the nce, or None
+    nce_temperature=0.05,
+    center=None,   # (3584,) mean of the train teacher vectors: the cos loss compares the vectors minus it
+    use_nce=True,  # False: the nce is not computed (returned as 0)
 ):
-    """Distillation of the OmniRetriever vectors (teachers) into the model (students). Two losses:
-
-    kd  : KL distillation. Every vector (student or teacher) gets a similarity distribution over the teachers of
-          the batch: softmax(similarities / temperature). The student's distribution must match the one of its own
-          teacher. So the student learns how its segment relates to the other segments, as the teacher sees it
-          (a segment of the same step, similar to its teacher, gets a high probability too).
-    cos : 1 - cosine(student, own teacher). Pulls every student onto its teacher, including the part that every
-          teacher shares (the kd ignores it), so the student vector really is close to the teacher vector.
-    """
     if len(students) == 0:   # no segment with a teacher in this batch (very rare): no loss
         zero = students.sum() * 0.0
-        return {'kd': zero, 'cos': zero}
+        return {'kd': zero, 'cos': zero, 'nce': zero}
 
     own_teachers = teachers[target]                                                  # (N, 3584)
 
@@ -133,9 +154,19 @@ def omni_distill_loss(
     kd_loss = F.kl_div(F.log_softmax(student_logits, dim=-1), F.log_softmax(teacher_logits, dim=-1),
                        log_target=True, reduction='batchmean')
 
-    cos_loss = (1.0 - F.cosine_similarity(students, own_teachers, dim=-1)).mean()
-    return {'kd': kd_loss, 'cos': cos_loss}
+    c = 0.0 if center is None else center.to(students.dtype)
+    cos_loss = (1.0 - F.cosine_similarity(students - c, own_teachers - c, dim=-1)).mean()
 
+    if not use_nce:
+        return {'kd': kd_loss, 'cos': cos_loss, 'nce': students.sum() * 0.0}
+
+    cands = teachers if bank is None else torch.cat((teachers, bank.to(teachers.dtype)))   # (M + Q, 3584)
+    logits = students @ cands.t() / nce_temperature                                  # (N, M + Q)
+    with torch.no_grad():
+        same = own_teachers @ cands.t() > 0.999                                      # (N, M + Q) duplicates
+        same[torch.arange(len(target), device=target.device), target] = False       # but not the target itself
+    nce_loss = F.cross_entropy(logits.masked_fill(same, float('-inf')), target)
+    return {'kd': kd_loss, 'cos': cos_loss, 'nce': nce_loss}
 
 
 def omni_losses(
@@ -145,20 +176,14 @@ def omni_losses(
     pos,         # (B, P) bool, points inside a GT segment
     gt_cls,      # (B, P, 48) one-hot: the GT segment (slot) of every point
     omni_em,     # (B, P, 3584) point head: student vector of every point, L2-normalised
-    feat0,       # (B, D, T) level-0 pyramid features, read by the span head
-    len0,        # (B,) real level-0 steps of every video
+    feats,       # per level (B, D, T_l) pyramid features, read by the span head
+    lens,        # (B, L) real steps of every level
     temperature=0.05,
+    queue=None,      # TeacherQueue: teachers of earlier batches, extra negatives of the nce; the batch is added after
+    nce_temperature=0.05,
+    center=None,     # (3584,) mean of the train teacher vectors, for the centred cos loss
+    use_nce=True,    # False: no InfoNCE for either head, and the queue is neither read nor filled
 ):
-    """Distillation of the OmniRetriever vectors (teachers), for the point head and the span head.
-
-    1. The teachers of the batch: every GT segment that has a teacher vector, put in one list (M rows).
-        teacher_row[b, s] remembers where segment s of video b sits in that list (-1: no teacher).
-    2. Point head: every point inside a GT segment that has a teacher is a student; its target is the row of
-        its segment's teacher.
-    3. Span head: every GT segment (left after the crop) that has a teacher gets one student vector from the
-        span head; its target is the row of its own teacher.
-    Both are trained by omni_distill_loss (KL distillation over the M teachers + cosine to the own teacher).
-    """
     dev = omni_em.device
 
     # 1. the teachers of the batch
@@ -174,15 +199,23 @@ def omni_losses(
     target = teacher_row[video, segment]                # (N',) row of its teacher, -1 = no teacher
     keep = target >= 0
     students = omni_em[video[keep], point[keep]]        # (N, 3584)
-    point_losses = omni_distill_loss(students, teachers, target[keep], temperature)
+    if not use_nce:
+        queue = None
+    bank = None if queue is None else queue.get()
+    point_losses = omni_distill_loss(students, teachers, target[keep], temperature, bank, nce_temperature, center,
+                                   use_nce)
 
     # 3. span head
-    span_students, span_target = [], []
+    span_segs, span_target = [], []
     for b, x in enumerate(video_list):
         target = teacher_row[b, x['labels'].to(dev)]    # (n,) row of the teacher of every GT segment left
         keep = target >= 0
-        segments = x['segments'].to(dev).float()[keep]  # (n', 2) start and end, in level-0 steps
-        span_students.append(span(feat0[b], int(len0[b]), segments))   # (n', 3584)
+        span_segs.append(x['segments'].to(dev).float()[keep])   # (n', 2) start and end, in level-0 steps
         span_target.append(target[keep])
-    span_losses = omni_distill_loss(torch.cat(span_students), teachers, torch.cat(span_target), temperature)
+    segs, real = pad_segments(span_segs)                # (B, n, 2), (B, n): the whole batch in one call
+    span_students = span(feats, lens, segs)[real]       # (N, 3584), in the order of span_target
+    span_losses = omni_distill_loss(span_students, teachers, torch.cat(span_target), temperature,
+                                    bank, nce_temperature, center, use_nce)
+    if queue is not None:
+        queue.push(teachers)
     return point_losses, span_losses

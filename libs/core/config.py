@@ -20,8 +20,8 @@ cfg = {
         'feat_folder': './datasets/k400_feats',
         'default_fps': 16,
         'max_seq_len': 256,      # every video is resampled to 256 steps
-        'trunc_thresh': 0.5,
-        'crop_ratio': [0.9, 1.0],
+        'trunc_thresh': 0.25,
+        'crop_ratio': [0.95, 1.0],
         'num_classes': 48,       # at most 48 GT segments per video (none of the videos with features has more)
         'omni_emb_dim': 3584,
     },
@@ -61,6 +61,12 @@ cfg = {
             # has cos 0.80 with a val teacher), so the student would stay far from its teacher
             'loss_weight_omni_cos': 2.0,
             'omni_temperature': 0.05,      # softmax temperature of the omni KL distillation (0.02 / 0.1: worse)
+            # InfoNCE student -> teachers (own teacher = positive, the other teachers of the batch and of a queue of
+            # earlier batches = negatives): trains what OmniR@1 measures
+            'use_omni_nce': True,          # False: no omni InfoNCE at all (point and span heads), no queue
+            'loss_weight_omni_nce': 0.5,
+            'omni_nce_temperature': 0.05,
+            'omni_queue_size': 8192,       # teachers of earlier batches kept as negatives (0 = batch only)
             'loss_weight_span': 0.2,
             'loss_weight_article': 0.5,
             'cls_prior_prob': 0.01,
@@ -90,7 +96,7 @@ cfg = {
         'learning_rate': 0.0003,   # batch 32: 1e-4 at batch 4 scaled by sqrt(8)
         'clip_proj_lr': 0.003,
         'weight_decay': 0.0001,
-        'epochs': 10,
+        'epochs': 13,
         'warmup_epochs': 2,
     },
 }

@@ -79,6 +79,15 @@ class EmbedHead(nn.Module):
         self.head, self.norm = _conv_stack(in_dim, feat_dim, n_layers, ks, with_ln)
         self.vis_proj = MaskedConv1D(feat_dim, feat_dim, ks, stride=1, padding=ks // 2)
         self.omni_vis_proj = MaskedConv1D(feat_dim, omi_feats_dim, ks, stride=1, padding=ks // 2)
+        # skip connection: the head input (pyramid features), projected to the omni space by a 1x1 conv, is added
+        # to the omni output, so the omni vector also sees the features before the conv stack
+        self.omni_skip = MaskedConv1D(in_dim, omi_feats_dim, 1, stride=1, padding=0)
+        # mean of the train teacher vectors (set by the model with omni_teacher_mean): the omni output is a
+        # deviation added to it, so the head only learns what is specific to the segment
+        self.omni_center = None
+        # learned scale of the deviation; small at start (raw output norm ~10-50, the mean ~0.75), so the student
+        # starts near the mean and the deviation grows as it is learned
+        self.omni_dev_scale = nn.Parameter(torch.tensor(0.01))
         self.clip_proj = Linear(clip_dim, feat_dim) # 512 -> 512 : captions
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
@@ -92,6 +101,7 @@ class EmbedHead(nn.Module):
         res, raw0 = tuple(), None
         omni_res = tuple()
         for x, m in zip(fpn_feats, fpn_masks):
+            x_in = x                                            # (B, C, T_l) head input, for the omni skip
             for i in range(len(self.head)):
                 x, _ = self.head[i](x, m)
                 x = self.act(self.norm[i](x))
@@ -100,6 +110,10 @@ class EmbedHead(nn.Module):
                 raw0 = x1                                       # (B, D, T0)
             res += (F.normalize(x1, dim=1).permute(0, 2, 1),)   # (B, T_l, D)
             x2, _ = self.omni_vis_proj(x, m)
+            x2 = x2 + self.omni_skip(x_in, m)[0]                # (B, 3584, T_l) + skip from the head input
+            x2 = self.omni_dev_scale * x2
+            if self.omni_center is not None:
+                x2 = x2 + self.omni_center[None, :, None]       # deviation around the train teacher mean
             omni_res += (F.normalize(x2, dim=1).permute(0, 2, 1),)   # (B, T_l, 3584)
 
         return res, omni_res, raw0
@@ -111,32 +125,32 @@ class EmbedHead(nn.Module):
         return F.normalize(self.clip_proj(cap), dim=-1) # (N, 512)
 
 
+def pad_segments(
+    segs,   # [B] (N_b, 2) segments of every video (N_b may be 0)
+):
+    """Segments of every video in one tensor, for the batched span heads (one call for the whole batch instead
+    of one per video). Returns (B, N, 2) segments, padded with [0, 0], and (B, N) bool, True = a real segment."""
+    n = max(max((len(s) for s in segs), default=0), 1)
+    out = segs[0].new_zeros(len(segs), n, 2)
+    valid = torch.zeros(len(segs), n, dtype=torch.bool, device=segs[0].device)
+    for b, s in enumerate(segs):
+        out[b, :len(s)] = s
+        valid[b, :len(s)] = True
+    return out, valid
+
+
 def segment_masks(
-    length,   # real level-0 steps of the video
-    segs,     # (N, 2) segments (start, end), in level-0 steps
-    T,        # level-0 steps of the padded video (T)
+    length,   # (B,) real steps of every video
+    segs,     # (B, N, 2) segments (start, end), in steps
+    T,        # steps of the padded videos
 ):
-    """
-    Create mask with shape: (N, T).
-    """
-    lo = segs[:, 0].floor().clamp(min=0, max=length - 1).long()             # (N,) first step
-    hi = segs[:, 1].ceil().long() + 1
-    hi = torch.maximum(hi.clamp(max=length), lo + 1)                        # (N,) one past the last step
+    """Apply mask for each segments."""
+    length = length.long()[:, None]                                         # (B, 1)
+    lo = torch.minimum(segs[..., 0].floor().long().clamp(min=0), length - 1)  # (B, N) first step
+    hi = torch.minimum(segs[..., 1].ceil().long() + 1, length)
+    hi = torch.maximum(hi, lo + 1)                                          # (B, N) one past the last step
     t = torch.arange(T, device=segs.device)                                 # (T,)
-    #           (1, T)      (N, 1)         (1, T)       (N, 1)
-    return (t[None, :] >= lo[:, None]) & (t[None, :] < hi[:, None]) # (N, T)
-
-
-# raw (512, 256) level 0, not normalized
-def span_mean(
-    raw,     # (D, T) level-0 features of one video, not normalised
-    length,  # real steps (padding excluded) of the video
-    segs,    # (N, 2) segments (start, end), in level-0 steps
-):
-    """Mean of the features over every segment: (N, D)."""
-    masks = segment_masks(length, segs, raw.shape[1]).to(raw.dtype)         # (N, T)
-    #         (N, T) @ (T, D)
-    return (masks @ raw.t()) / masks.sum(dim=1, keepdim=True)               # (N, D)
+    return (t >= lo[..., None]) & (t < hi[..., None])                       # (B, N, T)
 
 
 class AttentionPool(nn.Module):
@@ -167,51 +181,91 @@ class AttentionPool(nn.Module):
 
     def forward(
         self,
-        x,     # (N, T, dim) N sets of T vectors
-        mask,  # (N, T) bool, True = this vector belongs to the set (at least one True per row)
+        x,     # (B, T, dim) B videos of T vectors
+        mask,  # (B, N, T) bool: N sets per video, True = this vector belongs to the set
     ):
+        """(B, N, out_dim): one vector per set. The sets of a video share its vectors, so the scores are computed
+        once per video and only the mask differs between its sets. A set with no vector (padding) gets the
+        mean of the whole video, to stay finite; it is meant to be dropped by the caller."""
+        B, N, T = mask.shape
         dim = x.shape[-1]
-        keys = x                                                      # (N, T, dim)
-        values = x                                                    # (N, T, dim)
+        keys = x                                                      # (B, T, dim)
+        values = x                                                    # (B, T, dim)
+        mask = mask | ~mask.any(-1, keepdim=True)                     # empty (padding) sets: every vector
 
         # score of query q for input t: dot(query q, key t) / sqrt(dim), as in standard attention
-        #                 (Q, dim)       (N, dim, T)
-        scores = self.queries @ keys.transpose(1, 2) / dim ** 0.5     # (N, Q, T)
-        scores = scores.masked_fill(~mask[:, None, :], float('-inf')) # inputs outside the set get weight 0
-        weights = scores.softmax(dim=-1)                              # (N, Q, T), sums to 1 over T
+        #                 (Q, dim)       (B, dim, T)
+        scores = self.queries @ keys.transpose(1, 2) / dim ** 0.5     # (B, Q, T)
+        scores = scores[:, None].masked_fill(~mask[:, :, None], float('-inf'))   # (B, N, Q, T) outside the set: 0
+        weights = scores.softmax(dim=-1)                              # (B, N, Q, T), sums to 1 over T
 
         # every query: weighted mean of the inputs
-        #          (N, Q, T) @ (N, T, dim)
-        pooled = weights @ values                                     # (N, Q, dim)
-        return self.out(pooled.flatten(1))                            # (N, Q * dim) -> (N, out_dim)
+        #          (B, N * Q, T) @ (B, T, dim)
+        pooled = weights.flatten(1, 2) @ values                       # (B, N * Q, dim)
+        return self.out(pooled.reshape(B, N, len(self.queries) * dim))   # (B, N, Q * dim) -> (B, N, out_dim)
 
 
 class OmniSpanHead(nn.Module):
+    """One OmniRetriever vector for a whole segment, from every pyramid level.
+
+    A segment [start, end] (level-0 steps) covers [start / s_l, end / s_l] at level l (stride s_l): its steps of
+    the 6 levels are put in one set (fine steps for the details, coarse steps for the context), each tagged with a
+    learned embedding of its level, and AttentionPool compresses the set into one vector.
+    """
 
     def __init__(
         self,
-        dim,            # channels of the level-0 features (1024)
+        dim,            # channels of the pyramid features (1024)
         out_dim=3584,   # size of the OmniRetriever vectors
         n_queries=8,    # learned queries of the attention pooling
         hidden=4096,    # hidden size of the MLP
+        strides=(1,),   # stride of every pyramid level, in level-0 steps
     ):
         super().__init__()
+        self.strides = list(strides)
+        self.level_emb = nn.Parameter(torch.zeros(len(self.strides), dim))   # (L, dim), zero at start
         self.pool = AttentionPool(dim, out_dim, n_queries, hidden)
+        # skip connection: the mean of the segment's steps (all levels), projected linearly to the omni space, is
+        # added to the AttentionPool output, a direct path from the features to the omni vector
+        self.skip = nn.Linear(dim, out_dim)
+        # mean of the train teacher vectors (set by the model with omni_teacher_mean): the output is a deviation
+        # added to it, so the head only learns what is specific to the segment
+        self.center = None
+        # learned scale of the deviation; small at start (raw output norm ~10-50, the mean ~0.75), so the student
+        # starts near the mean and the deviation grows as it is learned
+        self.dev_scale = nn.Parameter(torch.tensor(0.01))
 
     def forward(
         self,
-        feat0,    # (D, T) level-0 features of one video
-        length,   # real level-0 steps of the video
-        segs,     # (N, 2) segments (start, end) in level-0 steps
+        feats,    # per level (B, D, T_l) pyramid features
+        lens,     # (B, L) real steps of every video at every level
+        segs,     # (B, N, 2) segments (start, end) in level-0 steps (pad_segments)
     ):
-        masks = segment_masks(length, segs, feat0.shape[1])            # (N, T)
-        x = feat0.t()[None].expand(len(segs), -1, -1)                  # (N, T, D) the same video for every segment
-        return F.normalize(self.pool(x, masks), dim=-1)                # (N, out_dim)
+        xs, masks = [], []
+        for l, (f, s) in enumerate(zip(feats, self.strides)):
+            xs.append(f.transpose(1, 2) + self.level_emb[l])                      # (B, T_l, D)
+            masks.append(segment_masks(lens[:, l], segs / s, f.shape[2]))        # (B, N, T_l)
+        x = torch.cat(xs, dim=1)                                                  # (B, P, D) every level
+        mask = torch.cat(masks, dim=2)                                            # (B, N, P)
+        mf = mask.to(x.dtype)
+        mean = (mf @ x) / mf.sum(-1, keepdim=True).clamp(min=1)                   # (B, N, D) mean of the segment
+        out = self.dev_scale * (self.pool(x, mask) + self.skip(mean))             # (B, N, out_dim)
+        if self.center is not None:
+            out = out + self.center                                               # deviation around the mean
+        return F.normalize(out, dim=-1)
 
 
 class SegmentContext(nn.Module):
-    def __init__(self, dim: int = 512):
+    """Group T vector in the same step into 1 vector. Return (B, N, D) which N is number of segments.
+    """
+    def __init__(
+        self,
+        dim: int = 512,
+        n_queries: int = 4,   # learned queries of the AttentionPool
+        hidden: int = 2048,   # hidden size of the AttentionPool MLP
+    ):
         super().__init__()
+        self.pool = AttentionPool(dim, dim, n_queries, hidden)   # vector of the span (instead of its mean)
         self.mlp = nn.Sequential(
             nn.Linear(2 * dim + 2, dim), # span + glob + pos = 512 + 512 + 2
             nn.GELU(),
@@ -222,14 +276,18 @@ class SegmentContext(nn.Module):
 
     def forward(
         self,
-        raw,     # (D, T) level-0 features of one video
-        length,  # real steps of the video
-        segs,    # (N, 2) segments, in steps
+        raw,     # (B, D, T) level-0 features
+        length,  # (B,) real steps of every video
+        segs,    # (B, N, 2) segments, in steps (pad_segments)
     ):
-        span = span_mean(raw, length, segs)                          # (N, D)
-        glob = raw[:, :length].mean(-1).expand_as(span)              # (N, D)
-        pos = (segs / float(length)).clamp(0, 1)                     # (N, 2)
-        return F.normalize(span + self.mlp(torch.cat((span, glob, pos), -1)), dim=-1) # (N, D)
+        T = raw.shape[2]
+        masks = segment_masks(length, segs, T)                       # (B, N, T)
+        span = self.pool(raw.transpose(1, 2), masks)                 # (B, N, D)
+        real = (torch.arange(T, device=raw.device) < length[:, None]).to(raw.dtype)   # (B, T) real steps
+        glob = (raw * real[:, None]).sum(-1) / length[:, None].to(raw.dtype)          # (B, D) mean of the video
+        glob = glob[:, None].expand_as(span)                         # (B, N, D)
+        pos = (segs / length[:, None, None].to(segs.dtype)).clamp(0, 1)                # (B, N, 2)
+        return F.normalize(span + self.mlp(torch.cat((span, glob, pos), -1)), dim=-1) # (B, N, D)
 
 
 class ArticleCondition(nn.Module):
@@ -242,7 +300,7 @@ class ArticleCondition(nn.Module):
         self.order = nn.Embedding(max_steps, dim)    # position of the step in the article
         self.norm = nn.LayerNorm(dim)
         self.attn = nn.MultiheadAttention(dim, n_head, batch_first=True)
-        
+
         nn.init.zeros_(self.attn.out_proj.weight)
         nn.init.zeros_(self.attn.out_proj.bias)
 

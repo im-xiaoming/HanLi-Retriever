@@ -5,6 +5,7 @@ import random
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
+from tqdm import tqdm
 
 from .lr_schedulers import LinearWarmupCosineAnnealingLR
 
@@ -102,7 +103,7 @@ def train_one_epoch(
     """Train one epoch, returns the mean of every loss (over this process's batches)."""
     model.train()
     losses = {}
-    for video_list in train_loader:
+    for video_list in tqdm(train_loader):
         for x in video_list:
             x['feats'] = {k: v.to(device) for k, v in x['feats'].items()}
         losses_dict = model(video_list)

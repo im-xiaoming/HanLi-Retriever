@@ -1,0 +1,131 @@
+{
+ "host": "DESKTOP-8PSQBN9",
+ "gpu": "NVIDIA GeForce RTX 3060",
+ "gpus": 1,
+ "started": "20261115-185351",
+ "finished": null,
+ "git": {
+  "commit": "e790d42",
+  "branch": "test",
+  "dirty": true
+ },
+ "argv": [
+  "train.py",
+  "--output",
+  "run15",
+  "--set",
+  "model.train_cfg.use_omni_nce=False"
+ ],
+ "config": {
+  "output_folder": "./ckpt\\run15",
+  "init_rand_seed": 1234567891,
+  "num_workers": 2,
+  "batch_size": 32,
+  "dataset": {
+   "json_file": "./datasets/annotations.json",
+   "taxonomy_file": "./datasets/taxonomy.csv",
+   "step_emb_file": "./datasets/step_emb_iv2j.npz",
+   "omni_emb_folder": "./datasets/omni_av_feats",
+   "feat_folder": "./datasets/k400_feats",
+   "default_fps": 16,
+   "max_seq_len": 256,
+   "trunc_thresh": 0.25,
+   "crop_ratio": [
+    0.95,
+    1.0
+   ],
+   "num_classes": 48,
+   "omni_emb_dim": 3584
+  },
+  "model": {
+   "num_articles": 617,
+   "pool_queries": 8,
+   "omni_span_hidden": 4096,
+   "backbone_arch": [
+    2,
+    3,
+    5
+   ],
+   "scale_factor": 2,
+   "input_dim_V": 768,
+   "input_dim_A": 768,
+   "n_head": 4,
+   "embd_kernel_size": 3,
+   "embd_dim": 512,
+   "embd_with_ln": true,
+   "head_dim": 512,
+   "omni_head_dim": 3584,
+   "regression_range": [
+    [
+     0,
+     4
+    ],
+    [
+     4,
+     8
+    ],
+    [
+     8,
+     16
+    ],
+    [
+     16,
+     32
+    ],
+    [
+     32,
+     64
+    ],
+    [
+     64,
+     10000
+    ]
+   ],
+   "head_num_layers": 3,
+   "head_kernel_size": 3,
+   "head_with_ln": true,
+   "use_abs_pe": true,
+   "max_seq_len": 256,
+   "clip_dim": 512,
+   "train_cfg": {
+    "loss_weight_reg": 1.0,
+    "loss_weight_iou": 1.0,
+    "loss_weight_emb": 0.2,
+    "loss_weight_omni_kd": 0.2,
+    "loss_weight_omni_cos": 2.0,
+    "omni_temperature": 0.05,
+    "use_omni_nce": false,
+    "loss_weight_omni_nce": 0.5,
+    "omni_nce_temperature": 0.05,
+    "omni_queue_size": 8192,
+    "loss_weight_span": 0.2,
+    "loss_weight_article": 0.5,
+    "cls_prior_prob": 0.01,
+    "dropout": 0.0,
+    "droppath": 0.1
+   },
+   "test_cfg": {
+    "score_thresh": 0.05,
+    "duration_thresh": 0.05,
+    "max_seg_num": 200,
+    "iou_power": 0.3,
+    "nms_sigma": 0.75,
+    "article_soft": false,
+    "article_soft_weight": 0.5
+   }
+  },
+  "train_cfg": {
+   "clip_grad_l2norm": 1.0,
+   "ema_decay": 0.999
+  },
+  "opt": {
+   "learning_rate": 0.0003,
+   "clip_proj_lr": 0.003,
+   "weight_decay": 0.0001,
+   "epochs": 13,
+   "warmup_epochs": 2
+  }
+ },
+ "history": [],
+ "best": null
+}

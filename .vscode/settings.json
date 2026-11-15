@@ -1,4 +1,21 @@
 {
   "editor.unicodeHighlight.allowedLocales": { "vi": true },
-  "editor.unicodeHighlight.nonBasicASCII": false
+  "editor.unicodeHighlight.nonBasicASCII": false,
+
+  // LaTeX Workshop: .tex on the left, compiled PDF in a tab on the right, rebuilt on every save
+  "latex-workshop.latex.tools": [
+    {
+      "name": "pdflatex",
+      "command": "C:/Users/PC/AppData/Roaming/TinyTeX/bin/windows/pdflatex.exe",
+      "args": ["-synctex=1", "-interaction=nonstopmode", "-file-line-error", "%DOC%"]
+    }
+  ],
+  "latex-workshop.latex.recipes": [
+    { "name": "pdflatex x2", "tools": ["pdflatex", "pdflatex"] }
+  ],
+  "latex-workshop.latex.autoBuild.run": "onSave",
+  "latex-workshop.view.pdf.viewer": "tab",
+  "latex-workshop.view.pdf.tab.editorGroup": "right",
+  "latex-workshop.latex.autoClean.run": "onBuilt",
+  "latex-workshop.latex.clean.fileTypes": ["*.aux", "*.log", "*.out", "*.fls", "*.fdb_latexmk"]
 }
