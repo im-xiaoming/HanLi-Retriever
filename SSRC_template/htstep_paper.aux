@@ -1,16 +1,5 @@
 \relax 
 \providecommand\hyper@newdestlabel[2]{}
-\providecommand\HyperFirstAtBeginDocument{\AtBeginDocument}
-\HyperFirstAtBeginDocument{\ifx\hyper@anchor\@undefined
-\global\let\oldnewlabel\newlabel
-\gdef\newlabel#1#2{\newlabelxx{#1}#2}
-\gdef\newlabelxx#1#2#3#4#5#6{\oldnewlabel{#1}{{#2}{#3}}}
-\AtEndDocument{\ifx\hyper@anchor\@undefined
-\let\newlabel\oldnewlabel
-\fi}
-\fi}
-\global\let\hyper@last\relax 
-\gdef\HyperFirstAtBeginDocument#1{#1}
 \providecommand\HyField@AuxAddToFields[1]{}
 \providecommand\HyField@AuxAddToCoFields[2]{}
 \citation{htstep}
@@ -54,26 +43,31 @@
 \newlabel{fig:backbone}{{2}{3}{Backbone audio-visual. Hai chuỗi feature đầu vào (visual feature từ InternVideo2 và audio feature từ BEATs, mỗi chuỗi $768 \times T$ với $T = 256$) được xử lý bởi hai luồng riêng có cùng cấu trúc: hai lớp Conv1D để chiếu feature về 512 kênh, ba khối transformer ở độ phân giải gốc, rồi năm khối transformer, mỗi khối giảm độ dài chuỗi đi một nửa. Kết quả là một temporal pyramid sáu tầng với độ dài $T, T/2, \ldots , T/32$: tầng mịn phù hợp với các bước ngắn, tầng thô phù hợp với các bước dài. Ở mỗi tầng, hai luồng trao đổi thông tin qua cross-attention (mũi tên đỏ), để âm thanh bổ sung cho hình ảnh và ngược lại. Cuối cùng, feature của hai luồng được nối lại thành $\mathbf {F}_l$ có 1024 kênh ở mỗi tầng $l$, làm đầu vào cho recipe conditioning và các head}{figure.2}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Backbone audio-visual}{3}{subsection.3.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-C}}Recipe conditioning}{3}{subsection.3.3}\protected@file@percent }
-\newlabel{eq:artc}{{1}{3}{Recipe conditioning}{equation.3.1}{}}
+\newlabel{eq:artc}{{1}{3}{Recipe conditioning}{equation.1}{}}
 \@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Recipe conditioning. Văn bản các bước của recipe ($C$ bước, mỗi bước một vector 512 chiều) được chiếu lên 1024 chiều, chuẩn hoá bằng LayerNorm và cộng với embedding thứ tự của bước trong recipe, tạo thành key và value. Feature $\mathbf  {F}_l$ của mỗi tầng, sau LayerNorm, đóng vai trò query. Nhờ multi-head attention (8 head), mỗi thời điểm trong video tìm những bước của recipe giống nó nhất và lấy thông tin từ các bước đó. Kết quả qua một lớp chiếu ra, nhân với mask để bỏ các vị trí padding, rồi được cộng residual vào $\mathbf  {F}_l$, cho feature $\mathbf  {F}'_l$. Lớp chiếu ra được khởi tạo bằng 0, nên lúc bắt đầu huấn luyện khối này chưa làm thay đổi feature và chỉ dần học cách dùng văn bản. Cùng một khối được dùng cho cả sáu tầng của pyramid.}}{3}{figure.3}\protected@file@percent }
 \newlabel{fig:recipecond}{{3}{3}{Recipe conditioning. Văn bản các bước của recipe ($C$ bước, mỗi bước một vector 512 chiều) được chiếu lên 1024 chiều, chuẩn hoá bằng LayerNorm và cộng với embedding thứ tự của bước trong recipe, tạo thành key và value. Feature $\mathbf {F}_l$ của mỗi tầng, sau LayerNorm, đóng vai trò query. Nhờ multi-head attention (8 head), mỗi thời điểm trong video tìm những bước của recipe giống nó nhất và lấy thông tin từ các bước đó. Kết quả qua một lớp chiếu ra, nhân với mask để bỏ các vị trí padding, rồi được cộng residual vào $\mathbf {F}_l$, cho feature $\mathbf {F}'_l$. Lớp chiếu ra được khởi tạo bằng 0, nên lúc bắt đầu huấn luyện khối này chưa làm thay đổi feature và chỉ dần học cách dùng văn bản. Cùng một khối được dùng cho cả sáu tầng của pyramid}{figure.3}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-D}}Localization head và step classification}{3}{subsection.3.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-E}}Recipe head}{3}{subsection.3.5}\protected@file@percent }
+<<<<<<< HEAD
 \newlabel{eq:art}{{2}{3}{Recipe head}{equation.3.2}{}}
 \citation{vina}
 \citation{baglm}
 \citation{hsd}
+=======
+\newlabel{eq:art}{{2}{3}{Recipe head}{equation.2}{}}
+\citation{baglm,hsd}
+>>>>>>> ca2af892e425636430dff9aca232eaacb5a7aca2
 \@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Các head chính của mô hình. \emph  {Event head} cho biết mỗi thời điểm có nằm trong một bước hay không. \emph  {Boundary head} cho biết bước đó bắt đầu và kết thúc ở đâu, kèm một điểm chất lượng dùng để xếp hạng các đoạn. \emph  {Point-wise head} và \emph  {segment-wise head} (màu tím) tạo multimodal embedding cho mỗi thời điểm và cho cả đoạn, được distill từ OmniRetriever. Chữ đỏ in nghiêng là loss của mỗi đầu ra.}}{4}{figure.4}\protected@file@percent }
 \newlabel{fig:heads}{{4}{4}{Các head chính của mô hình. \emph {Event head} cho biết mỗi thời điểm có nằm trong một bước hay không. \emph {Boundary head} cho biết bước đó bắt đầu và kết thúc ở đâu, kèm một điểm chất lượng dùng để xếp hạng các đoạn. \emph {Point-wise head} và \emph {segment-wise head} (màu tím) tạo multimodal embedding cho mỗi thời điểm và cho cả đoạn, được distill từ OmniRetriever. Chữ đỏ in nghiêng là loss của mỗi đầu ra}{figure.4}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-F}}Distillation cho multimodal embedding}{4}{subsection.3.6}\protected@file@percent }
-\newlabel{eq:dev}{{3}{4}{Distillation cho multimodal embedding}{equation.3.3}{}}
-\newlabel{eq:kd}{{4}{4}{Distillation cho multimodal embedding}{equation.3.4}{}}
-\newlabel{eq:cos}{{5}{4}{Distillation cho multimodal embedding}{equation.3.5}{}}
-\newlabel{eq:nce}{{6}{4}{Distillation cho multimodal embedding}{equation.3.6}{}}
+\newlabel{eq:dev}{{3}{4}{Distillation cho multimodal embedding}{equation.3}{}}
+\newlabel{eq:kd}{{4}{4}{Distillation cho multimodal embedding}{equation.4}{}}
+\newlabel{eq:cos}{{5}{4}{Distillation cho multimodal embedding}{equation.5}{}}
+\newlabel{eq:nce}{{6}{4}{Distillation cho multimodal embedding}{equation.6}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-G}}Ridge regression lúc inference}{4}{subsection.3.7}\protected@file@percent }
-\newlabel{eq:ridge}{{7}{4}{Ridge regression lúc inference}{equation.3.7}{}}
+\newlabel{eq:ridge}{{7}{4}{Ridge regression lúc inference}{equation.7}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-H}}Loss tổng}{4}{subsection.3.8}\protected@file@percent }
-\newlabel{eq:total}{{8}{4}{Loss tổng}{equation.3.8}{}}
+\newlabel{eq:total}{{8}{4}{Loss tổng}{equation.8}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {IV}Thực nghiệm}{4}{section.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}Dữ liệu}{4}{subsection.4.1}\protected@file@percent }
 \citation{htstep}
@@ -96,6 +90,11 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-G}}Giới hạn của OmniCosC}{5}{subsection.4.7}\protected@file@percent }
 \citation{tvr}
 \citation{colbert}
+<<<<<<< HEAD
+=======
+\citation{omniretriever}
+\citation{wave}
+>>>>>>> ca2af892e425636430dff9aca232eaacb5a7aca2
 \@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces So sánh mAP article grounding với các công trình khác}}{6}{table.2}\protected@file@percent }
 \newlabel{tab:sota}{{II}{6}{So sánh mAP article grounding với các công trình khác}{table.2}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {III}{\ignorespaces Thêm dần từng thành phần (val\_seen, 510 video)}}{6}{table.3}\protected@file@percent }
@@ -103,21 +102,28 @@
 \@writefile{lot}{\contentsline {table}{\numberline {IV}{\ignorespaces OmniCosC của ridge regression với các đầu vào khác nhau}}{6}{table.4}\protected@file@percent }
 \newlabel{tab:ceiling}{{IV}{6}{OmniCosC của ridge regression với các đầu vào khác nhau}{table.4}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-H}}Độ tin cậy của kết quả}{6}{subsection.4.8}\protected@file@percent }
+<<<<<<< HEAD
 \@writefile{toc}{\contentsline {section}{\numberline {V}UEMR: truy hồi bước trong kho video}{6}{section.5}\protected@file@percent }
 \newlabel{sec:uemr}{{V}{6}{UEMR: truy hồi bước trong kho video}{section.5}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-A}}Chỉ mục và chấm điểm}{6}{subsection.5.1}\protected@file@percent }
 \newlabel{eq:uemr_full}{{9}{6}{Chỉ mục và chấm điểm}{equation.5.9}{}}
+=======
+\@writefile{toc}{\contentsline {section}{\numberline {V}Ứng dụng: truy hồi bước trong kho video}{6}{section.5}\protected@file@percent }
+\newlabel{sec:retrieval}{{V}{6}{Ứng dụng: truy hồi bước trong kho video}{section.5}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {V}{\ignorespaces OmniRetriever gốc và OmniRetriever-HT trên val\_seen}}{6}{table.5}\protected@file@percent }
+\newlabel{tab:ret_omni}{{V}{6}{OmniRetriever gốc và OmniRetriever-HT trên val\_seen}{table.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-A}}Mô hình truy hồi OmniRetriever-HT}{6}{subsection.5.1}\protected@file@percent }
+>>>>>>> ca2af892e425636430dff9aca232eaacb5a7aca2
 \citation{youcook2}
 \citation{bootstrap}
-\@writefile{lot}{\contentsline {table}{\numberline {V}{\ignorespaces Bốn biến thể UEMR trên cùng đoạn R8}}{7}{table.5}\protected@file@percent }
-\newlabel{tab:uemr_variants}{{V}{7}{Bốn biến thể UEMR trên cùng đoạn R8}{table.5}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-B}}Giao thức đánh giá}{7}{subsection.5.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-C}}Kết quả trên tập dev}{7}{subsection.5.3}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {VI}{\ignorespaces UEMR trên tập dev, multi-positive: R@1 của ba cột và VCMR R@1 của cột (b)}}{7}{table.6}\protected@file@percent }
-\newlabel{tab:uemr_dev}{{VI}{7}{UEMR trên tập dev, multi-positive: R@1 của ba cột và VCMR R@1 của cột (b)}{table.6}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {VII}{\ignorespaces UEMR trên tập dev: hiệu R@1 multi-positive và khoảng tin cậy 95\%}}{7}{table.7}\protected@file@percent }
-\newlabel{tab:uemr_pairs}{{VII}{7}{UEMR trên tập dev: hiệu R@1 multi-positive và khoảng tin cậy 95\%}{table.7}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-D}}Benchmark YouCook2 (zero-shot)}{7}{subsection.5.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {VI}{\ignorespaces Các cách cắt video (số vector mỗi video đo trên dev)}}{7}{table.6}\protected@file@percent }
+\newlabel{tab:ret_cuts}{{VI}{7}{Các cách cắt video (số vector mỗi video đo trên dev)}{table.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-B}}Cách cắt và chấm điểm}{7}{subsection.5.2}\protected@file@percent }
+\newlabel{eq:ret_score}{{9}{7}{Cách cắt và chấm điểm}{equation.9}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-C}}Giao thức đánh giá}{7}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-D}}Kết quả trên tập dev}{7}{subsection.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-E}}Benchmark YouCook2 (zero-shot)}{7}{subsection.5.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {VI}Kết luận}{7}{section.6}\protected@file@percent }
 \bibcite{htstep}{1}
 \bibcite{howto100m}{2}
 \bibcite{actionformer}{3}
@@ -143,8 +149,9 @@
 \bibcite{colbert}{23}
 \bibcite{youcook2}{24}
 \bibcite{bootstrap}{25}
-\@writefile{lot}{\contentsline {table}{\numberline {VIII}{\ignorespaces UEMR trên YouCook2, multi-positive, R@1: tiêu chí viết trước}}{8}{table.8}\protected@file@percent }
-\newlabel{tab:uemr_bench}{{VIII}{8}{UEMR trên YouCook2, multi-positive, R@1: tiêu chí viết trước}{table.8}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {VI}Kết luận}{8}{section.6}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{T\`ai li\d \ecircumflex u}{8}{section*.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {VII}{\ignorespaces R@1 multi-positive của ba cách chấm và VCMR R@1 của cách chấm Omni, trên dev và YouCook2 (zero-shot, 635 video)}}{8}{table.7}\protected@file@percent }
+\newlabel{tab:ret_dev}{{VII}{8}{R@1 multi-positive của ba cách chấm và VCMR R@1 của cách chấm Omni, trên dev và YouCook2 (zero-shot, 635 video)}{table.7}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {VIII}{\ignorespaces Hiệu R@1 multi-positive và CI 95\% trên dev và YouCook2}}{8}{table.8}\protected@file@percent }
+\newlabel{tab:ret_pairs}{{VIII}{8}{Hiệu R@1 multi-positive và CI 95\% trên dev và YouCook2}{table.8}{}}
+\@writefile{toc}{\contentsline {section}{T\`ai li\d \ecircumflex u}{8}{section*.1}\protected@file@percent }
 \gdef \@abspage@last{8}
