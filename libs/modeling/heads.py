@@ -85,7 +85,7 @@ class EmbedHead(nn.Module):
         # mean of the train teacher vectors (set by the model with omni_teacher_mean): the omni output is a
         # deviation added to it, so the head only learns what is specific to the segment
         self.omni_center = None
-        # learned scale of the deviation; small at start (raw output ~|50|, the mean ~0.75), so the student
+        # learned scale of the deviation; small at start (raw output norm ~10-50, the mean ~0.75), so the student
         # starts near the mean and the deviation grows as it is learned
         self.omni_dev_scale = nn.Parameter(torch.tensor(0.01))
         self.clip_proj = Linear(clip_dim, feat_dim) # 512 -> 512 : captions
@@ -223,7 +223,7 @@ class OmniSpanHead(nn.Module):
     ):
         super().__init__()
         self.strides = list(strides)
-        self.level_emb = nn.Parameter(torch.zeros(len(self.strides), dim))   # (L, dim), Xavier init (init_heads)
+        self.level_emb = nn.Parameter(torch.zeros(len(self.strides), dim))   # (L, dim), zero at start
         self.pool = AttentionPool(dim, out_dim, n_queries, hidden)
         # skip connection: the mean of the segment's steps (all levels), projected linearly to the omni space, is
         # added to the AttentionPool output, a direct path from the features to the omni vector
@@ -231,7 +231,7 @@ class OmniSpanHead(nn.Module):
         # mean of the train teacher vectors (set by the model with omni_teacher_mean): the output is a deviation
         # added to it, so the head only learns what is specific to the segment
         self.center = None
-        # learned scale of the deviation; small at start (raw output ~|50|, the mean ~0.75), so the student
+        # learned scale of the deviation; small at start (raw output norm ~10-50, the mean ~0.75), so the student
         # starts near the mean and the deviation grows as it is learned
         self.dev_scale = nn.Parameter(torch.tensor(0.01))
 
@@ -271,6 +271,8 @@ class SegmentContext(nn.Module):
             nn.GELU(),
             nn.Linear(dim, dim)
         )
+        nn.init.zeros_(self.mlp[-1].weight)
+        nn.init.zeros_(self.mlp[-1].bias)
 
     def forward(
         self,
@@ -298,6 +300,9 @@ class ArticleCondition(nn.Module):
         self.order = nn.Embedding(max_steps, dim)    # position of the step in the article
         self.norm = nn.LayerNorm(dim)
         self.attn = nn.MultiheadAttention(dim, n_head, batch_first=True)
+
+        nn.init.zeros_(self.attn.out_proj.weight)
+        nn.init.zeros_(self.attn.out_proj.bias)
 
     def forward(
         self,
@@ -337,8 +342,8 @@ class ArticleHead(nn.Module):
         )
         self.txt = nn.Linear(text_dim, head_dim)
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
-        # learned part of every article vector (Xavier init, init_heads); with ~9 train videos per article it can
-        # learn what the text does not tell apart (similar dishes)
+        # learned part of every article vector. It starts at 0, so at first an article is its text only; with
+        # ~9 train videos per article it can learn what the text does not tell apart (similar dishes)
         self.article_learned = nn.Parameter(torch.zeros(num_articles, head_dim))
 
     def pool(
@@ -363,24 +368,6 @@ class ArticleHead(nn.Module):
         t = F.normalize(self.txt(art_txt) + self.article_learned, dim=-1)   # (A, head_dim)
 
         return self.logit_scale.exp().clamp(max=100) * v @ t.t()         # (B, A)
-
-
-def init_heads(
-    heads,   # the head modules (not the backbone)
-):
-    """Xavier-uniform init of every weight of the heads: Linear / conv weights, attention projections and the
-    learned vectors (article_learned, level_emb, queries), including the outputs that used to start at zero
-    (SegmentContext, ArticleCondition). Biases become 0, except the event prior and the boundary bias (they set
-    the starting outputs of the losses). LayerNorm and logit_scale are kept."""
-    for head in heads:
-        keep_bias = {id(head.out.conv.bias)} if isinstance(head, (EventHead, BoundaryHead)) else set()
-        for name, p in head.named_parameters():
-            if 'norm' in name or 'logit_scale' in name or id(p) in keep_bias:
-                continue                                    # LayerNorm, temperature, prior biases
-            if p.dim() >= 2:
-                nn.init.xavier_uniform_(p)                  # weights (conv: fan over in_channels * kernel)
-            elif name.endswith('bias'):
-                nn.init.zeros_(p)
 
 
 class BoundaryHead(nn.Module):

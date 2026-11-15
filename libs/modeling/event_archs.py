@@ -7,7 +7,7 @@ from .criterion import event_losses
 from .losses import TeacherQueue
 from .postprocess import event_inference
 from .heads import (
-    EventHead, BoundaryHead, EmbedHead, SegmentContext, ArticleCondition, ArticleHead, OmniSpanHead, init_heads
+    EventHead, BoundaryHead, EmbedHead, SegmentContext, ArticleCondition, ArticleHead, OmniSpanHead
 )
 from ..datasets.helper import preprocessing
 
@@ -71,8 +71,6 @@ class EventCaptionTransformer(nn.Module):
         #   - point head (in embed_head): every point inside a GT segment predicts the vector of its segment
         #   - span head: given the start and end of a segment, one vector for the whole segment
         self.omni_span = OmniSpanHead(D, omni_head_dim, pool_queries, omni_span_hidden, self.fpn_strides)
-        init_heads([self.event_head, self.bound_head, self.embed_head, self.seg_ctx, self.article_cond,
-                    self.article_head, self.omni_span])   # Xavier init of every head
         # mean of the train teacher vectors (the part every segment shares); set by train.py. Used by the OmniCosC
         # metric, the centred omni cos loss and the omni heads (their outputs are deviations around it)
         self.omni_teacher_mean = None
