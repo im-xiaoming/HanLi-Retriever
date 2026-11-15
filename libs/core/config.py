@@ -27,7 +27,7 @@ cfg = {
     },
 
     'model': {
-        # article head: every article (recipe) gets a learned vector (zero at start) on top of its text vector
+        # article head: every article (recipe) gets a learned vector (Xavier init) on top of its text vector
         'num_articles': 617,
         'pool_queries': 8,          # omni span head: learned queries of its attention pooling
         'omni_span_hidden': 4096,   # hidden size of the omni span head MLP
