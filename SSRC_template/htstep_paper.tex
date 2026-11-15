@@ -42,20 +42,20 @@ Audio-visual learning, HT-Step, knowledge distillation, multimodal embedding, st
 \centering
 \includegraphics[width=\textwidth]{fig_teaser.pdf}
 \begin{minipage}{0.86\textwidth}
-\caption{Ví dụ trên một video của tập val\_seen (``Make Wonton Soup'', 4 phút). \emph{Hàng trên}: đoạn từ 2:40 đến 3:50, nơi chứa các bước của recipe; thanh \textcolor{red}{đỏ} là đoạn ground truth kèm tên bước, thanh và khung \textcolor{green!50!black}{xanh} là đoạn mô hình dự đoán kèm bước được chọn. Mô hình định vị đúng ba đoạn (IoU 0,83; 0,91; 0,73) và chọn đúng bước cho cả ba, nhưng bỏ sót lần ``Boil the wontons'' thứ hai ở cuối video. \emph{Hàng dưới}: embedding 3584 chiều của từng đoạn, do teacher OmniRetriever (7 tỉ tham số) và do mô hình của chúng tôi (137 triệu tham số) tạo ra; để dễ nhìn, mỗi embedding được trừ trung bình rồi gộp thành 72 ô. Hai embedding có mean-centered cosine từ 0,76 đến 0,85.}
+\caption{Ví dụ trên một video của tập val\_seen (``Make Wonton Soup'', 4 phút). \emph{Hàng trên}: đoạn từ 2:40 đến 3:50, nơi chứa các bước của recipe; thanh \textcolor{red}{đỏ} là đoạn ground truth kèm tên bước, thanh và khung \textcolor{green!50!black}{xanh} là đoạn mô hình dự đoán kèm bước được chọn. Mô hình định vị đúng ba đoạn (IoU 0,83; 0,91; 0,73) và chọn đúng bước cho cả ba, nhưng bỏ sót lần ``Boil the wontons'' thứ hai ở cuối video. \emph{Hàng dưới}: embedding 3584 chiều của từng đoạn, do teacher OmniRetriever (7 tỉ tham số) và do mô hình của chúng tôi (137 triệu tham số) tạo ra. Hai embedding có mean-centered cosine từ 0,76 đến 0,85.}
 \label{fig:teaser}
 \end{minipage}
 \end{figure*}
 
 \section{Giới thiệu}
 \label{sec:introduction}
-\IEEEPARstart{V}{ideo} hướng dẫn trên mạng là nguồn học kỹ năng phổ biến, nhưng một video nấu ăn thường dài hàng chục phút, trong đó phần lớn thời lượng là lời giới thiệu, chuẩn bị hay trò chuyện. Bộ dữ liệu HT-Step~\cite{htstep} gán nhãn thời gian cho các bước của bài viết hướng dẫn (article) trên các video của HowTo100M~\cite{howto100m}; các đoạn được gán nhãn chỉ phủ khoảng 20\% độ dài video. Bài toán \emph{article grounding} của HT-Step yêu cầu: cho một video và recipe của nó, tìm vị trí thời gian của từng bước trong recipe (Hình~\ref{fig:teaser}).
+\IEEEPARstart{I}{nstructional} video, như các video dạy nấu ăn trên YouTube, là cách phổ biến để người xem học một kỹ năng mới. Tuy nhiên, một video như vậy thường dài hàng chục phút, phần lớn thời lượng là lời giới thiệu, khâu chuẩn bị hay trò chuyện, nên người xem khó tìm nhanh đoạn thực hiện một bước cụ thể. Bộ dữ liệu HT-Step~\cite{htstep} gán nhãn thời gian cho các bước của bài viết hướng dẫn (article) trên các video của HowTo100M~\cite{howto100m}; các đoạn được gán nhãn chỉ phủ khoảng 20\% độ dài video. Bài toán \emph{article grounding} của HT-Step yêu cầu: cho một video và recipe của nó, tìm vị trí thời gian của từng bước trong recipe (Hình~\ref{fig:teaser}).
 
-Bài toán khó vì ba lý do. Thứ nhất, cùng một bước như ``đập trứng vào bát'' có thể dài vài giây hoặc vài phút, nên mô hình cần nhìn video ở nhiều độ phân giải thời gian. Thứ hai, các bước của cùng một recipe trông rất giống nhau, nên việc gán đúng bước cho một đoạn đòi hỏi hiểu cả hình ảnh lẫn văn bản. Thứ ba, ở các ứng dụng retrieval, mỗi đoạn tìm được còn cần một vector mô tả để so với câu truy vấn; các mô hình đa phương thức lớn cho vector tốt nhưng quá chậm để chạy trên mọi đoạn của mọi video.
+Bài toán khó vì ba lý do. Thứ nhất, cùng một bước như ``đập trứng vào bát'' có thể dài vài giây hoặc vài phút, nên mô hình cần nhìn video ở nhiều độ phân giải thời gian. Thứ hai, các bước của cùng một recipe trông rất giống nhau, nên việc gán đúng bước cho một đoạn đòi hỏi hiểu cả hình ảnh lẫn văn bản. Thứ ba, ngoài vị trí và tên bước, mỗi đoạn tìm được nên có một embedding mô tả nội dung của chính đoạn đó để có thể dùng lại về sau; các mô hình đa phương thức lớn cho embedding tốt nhưng quá chậm để chạy trên mọi đoạn của mọi video.
 
 Các nghiên cứu gần đây như OmniRetriever~\cite{omniretriever} đạt kết quả rất cao trong text-to-video retrieval, nhưng chỉ làm việc trên các đoạn đã cắt sẵn, mỗi đoạn một bước, và với hàng tỉ tham số thì quá tốn kém để chạy trên mọi đoạn của mọi video. Ngược lại, các mô hình temporal localization như ActionFormer~\cite{actionformer} trích xuất được các bước từ một untrimmed video mà vẫn nhỏ gọn.
 
-Từ đó, chúng tôi kết hợp kiến trúc của ActionFormer để định vị các bước với teacher--student distillation để distill tri thức từ OmniRetriever. Mỗi bước được định vị nhờ vậy có một embedding trong không gian của OmniRetriever, sẵn sàng cho text-based retrieval, mà không cần huấn luyện lại hay chạy mô hình hàng tỉ tham số.
+Từ đó, chúng tôi kết hợp kiến trúc của ActionFormer để định vị các bước với teacher--student distillation để distill tri thức từ OmniRetriever. Mỗi bước được định vị nhờ vậy có một embedding nằm trong cùng không gian với embedding của OmniRetriever, mà không cần huấn luyện lại hay chạy mô hình hàng tỉ tham số.
 
 Bài báo đề xuất một mô hình multi-task theo hướng ActionFormer~\cite{actionformer}, mở rộng thành hai luồng audio-visual, và giải đồng thời cả ba việc. Các đóng góp chính gồm:
 \begin{itemize}
@@ -102,9 +102,12 @@ Mô hình theo khung của ActionFormer~\cite{actionformer}; backbone gồm hai 
 Theo ý tưởng của ActionFormer-T~\cite{htstep}, feature ở mọi tầng được chú ý tới văn bản các bước của recipe. Gọi $\mathbf{E} \in \mathbb{R}^{C \times 512}$ là vector văn bản của $C$ bước. Với mỗi tầng,
 \begin{equation}
 \label{eq:artc}
-\mathbf{F}'_l = \mathbf{F}_l + \mathrm{MHA}\big(\mathrm{LN}(\mathbf{F}_l),\ \mathbf{K},\ \mathbf{K}\big), \quad \mathbf{K} = \mathrm{LN}(\mathbf{E}\mathbf{W}) + \mathbf{O},
+\begin{aligned}
+\mathbf{K} &= \mathrm{LN}(\mathbf{E}\mathbf{W}) + \mathbf{O},\\
+\mathbf{F}'_l &= \mathbf{F}_l + \mathrm{MHA}\big(\mathrm{LN}(\mathbf{F}_l),\ \mathbf{K},\ \mathbf{K}\big),
+\end{aligned}
 \end{equation}
-trong đó $\mathbf{O}$ là embedding vị trí của bước trong recipe. Lớp chiếu ra của khối chú ý được khởi tạo bằng 0, nên lúc đầu khối này không làm thay đổi feature. Cùng một khối (chung trọng số) được dùng cho cả sáu tầng (Hình~\ref{fig:recipecond}).
+trong đó $\mathbf{F}_l$ là feature của tầng $l$, $\mathbf{W}$ là ma trận chiếu, $\mathrm{LN}$ là LayerNorm, $\mathbf{O}$ là embedding vị trí của bước trong recipe, $\mathbf{K}$ là key và value của $C$ bước. Lớp chiếu ra của khối attention được khởi tạo bằng 0, nên lúc đầu $\mathbf{F}'_l = \mathbf{F}_l$. Cùng một khối (chung trọng số) được dùng cho cả sáu tầng (Hình~\ref{fig:recipecond}).
 
 \begin{figure}[t]
 \centering
@@ -132,7 +135,16 @@ Lúc inference, điểm của một đoạn là tích của xác suất sự ki�
 \end{figure*}
 
 \subsection{Recipe head}
-Recipe head dùng feature \emph{trước} khi conditioning, vì feature sau~\eqref{eq:artc} đã chứa văn bản của recipe đúng. Vector video $\mathbf{v}$ là MLP của trung bình và max theo thời gian của feature tầng 0. Vector của recipe $a$ là $\mathbf{u}_a = \mathbf{W}_t \bar{\mathbf{e}}_a + \mathbf{b}_a$, với $\bar{\mathbf{e}}_a$ là trung bình văn bản các bước của nó và $\mathbf{b}_a$ là một vector học được, khởi tạo bằng 0. Điểm của recipe là cosine giữa $\mathbf{v}$ và $\mathbf{u}_a$ nhân với một nhiệt độ học được; head này học bằng cross-entropy trên 617 recipe.
+Recipe head đoán recipe của video trong 617 recipe:
+\begin{equation}
+\label{eq:art}
+\begin{aligned}
+&\mathbf{v} = \mathrm{MLP}\big([\,\mathrm{mean}_t(\mathbf{F}_0);\ \mathrm{max}_t(\mathbf{F}_0)\,]\big),\\
+&\mathbf{u}_a = \mathbf{W}_t\, \bar{\mathbf{e}}_a + \mathbf{b}_a,\\
+&z_a = \gamma \cos(\mathbf{v}, \mathbf{u}_a),
+\end{aligned}
+\end{equation}
+trong đó $\mathbf{F}_0$ là feature tầng 0 trước conditioning, $\mathbf{v}$ là vector video, $\bar{\mathbf{e}}_a$ là trung bình văn bản các bước của recipe $a$, $\mathbf{W}_t$ là ma trận chiếu, $\mathbf{b}_a$ là vector học được của recipe $a$ (khởi tạo bằng 0), $\gamma$ là nhiệt độ học được và $z_a$ là điểm của recipe $a$. Head học bằng cross-entropy trên $z_a$.
 
 \subsection{Distillation cho multimodal embedding}
 Teacher embedding $\mathbf{t}$ (đã chuẩn hoá L2) là vector mà OmniRetriever tính cho từng đoạn GT, từ 8 khung hình và âm thanh của đoạn. Hai student head dự đoán vector này:
