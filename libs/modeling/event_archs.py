@@ -65,7 +65,7 @@ class EventCaptionTransformer(nn.Module):
         # condition the features on the article's step texts (ActionFormer-T of the HT-Step paper)
         self.article_cond = ArticleCondition(D, clip_dim)
         # predict the video's article from the video, so it needs not be given at inference
-        self.article_head = ArticleHead(D, head_dim, clip_dim, num_articles, len(self.fpn_strides))
+        self.article_head = ArticleHead(D, head_dim, clip_dim, num_articles)
 
         # omni: the model learns the OmniRetriever vector (teacher) of every GT segment, twice:
         #   - point head (in embed_head): every point inside a GT segment predicts the vector of its segment
@@ -114,7 +114,7 @@ class EventCaptionTransformer(nn.Module):
         feats = [torch.cat((v, a), dim=1) for v, a in zip(fV, fA)]           # per level (B, 1024, T_l), len(feats) = 6
 
         # article head: score of every article for every video, from the features before the article conditioning
-        art_logits = self.article_head(feats, msk, self.article_raw)  # (B, A), from every pyramid level
+        art_logits = self.article_head(feats[0], msk[0], self.article_raw)  # (B, A)
 
         # steps of the video's article (given)
         cands = [x['cand'].to(self.device) for x in video_list]
