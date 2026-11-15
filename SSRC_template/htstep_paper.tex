@@ -168,12 +168,13 @@ Mỗi head được học bằng ba loss trên các đoạn của batch:
 với $\mathbf{T}$ là các teacher embedding trong batch, $\mathcal{Q}$ là hàng đợi 8192 teacher embedding của các batch trước, $\sigma$ là softmax và $\tau = 0{,}05$. Hàm~\eqref{eq:kd} dạy student quan hệ giữa đoạn này với các đoạn khác, \eqref{eq:cos} kéo student về đúng teacher sau khi trừ phần chung, còn \eqref{eq:nce} dạy student phân biệt teacher của mình với teacher của các đoạn khác.
 
 \subsection{Ridge regression lúc inference}
-Với mỗi đoạn, ta lấy trung bình và max của input feature (hình ảnh và âm thanh) trong đoạn, cùng trung bình cả video, được $\mathbf{x} \in \mathbb{R}^{4608}$. Sau khi chuẩn hoá từng chiều, một ridge regression được giải dạng đóng trên 33445 đoạn huấn luyện:
+Với mỗi đoạn, ta lấy trung bình và max của input feature (hình ảnh và âm thanh) trong đoạn, cùng trung bình cả video, được $\mathbf{x} \in \mathbb{R}^{d}$ ($d = 4608$). Sau khi chuẩn hoá từng chiều, một ridge regression được giải dạng đóng trên $N$ đoạn huấn luyện:
 \begin{equation}
 \label{eq:ridge}
 \mathbf{W} = \big(\mathbf{X}^{\top}\mathbf{X} + \lambda \mathbf{I}\big)^{-1} \mathbf{X}^{\top} \big(\mathbf{Y} - \boldsymbol{\mu}\big), \quad \lambda = 3000.
 \end{equation}
-Lúc inference, vector của hai student head (đã chuẩn hoá và cộng với nhau) được cộng với vector ridge $\hat{\mathbf{s}}_{\mathrm{r}} = \mathrm{norm}(\mathbf{x}\mathbf{W} + \boldsymbol{\mu})$ rồi chuẩn hoá lại. Bước này không cần huấn luyện lại mô hình và mất khoảng một phút.
+trong đó mỗi hàng của $\mathbf{X} \in \mathbb{R}^{N \times d}$ là vector $\mathbf{x}$ của một đoạn huấn luyện, mỗi hàng của $\mathbf{Y} \in \mathbb{R}^{N \times D}$ là teacher embedding của đoạn đó ($D = 3584$), $\boldsymbol{\mu}$ được trừ khỏi từng hàng, $\mathbf{I}$ là ma trận đơn vị, $\lambda$ là hệ số regularization và $\mathbf{W} \in \mathbb{R}^{d \times D}$ là ma trận hồi quy.
+Lúc inference, vector của hai student head (đã chuẩn hoá và cộng với nhau) được cộng với vector ridge $\hat{\mathbf{s}}_{\mathrm{r}} = \mathrm{norm}(\mathbf{x}\mathbf{W} + \boldsymbol{\mu})$, với $\mathrm{norm}$ là chuẩn hoá L2, rồi chuẩn hoá lại. Bước này không cần huấn luyện lại mô hình.
 
 \subsection{Loss tổng}
 \begin{equation}
@@ -188,7 +189,7 @@ trong đó $\mathcal{L}_{\mathrm{seg}}$ là InfoNCE giữa vector của SegmentC
 \section{Thực nghiệm}
 
 \subsection{Dữ liệu}
-Chúng tôi dùng 5823 video huấn luyện của HT-Step có feature (36002 đoạn GT, trong đó 33445 đoạn có teacher embedding; đoạn thiếu teacher embedding bị bỏ khỏi các loss distillation). Máy chủ chấm điểm test split của HT-Step đã đóng, nên giống các công trình gần đây~\cite{baglm,hsd}, chúng tôi đánh giá trên validation split của các seen activity (val\_seen): 600 video thuộc 120 activity, trong đó 510 video có feature, với 2990 đoạn GT.
+Mô hình được huấn luyện trên train split của HT-Step. Máy chủ chấm điểm test split của HT-Step đã đóng, nên chúng tôi đánh giá trên validation split của các seen activity (val\_seen). Đây cũng là tập đánh giá của nhiều công trình về step grounding trên HT-Step: VINA~\cite{vina} báo cáo kết quả trên tập này, còn BaGLM~\cite{baglm} và HSD~\cite{hsd} dùng nó làm tập đánh giá chính và chạy lại NaSVA, UniTime trên cùng tập để so sánh. Tập val\_seen gồm 600 video thuộc 120 activity. HT-Step chỉ cung cấp ID YouTube của video, và 90 video đã bị xoá hoặc chuyển sang riêng tư nên không còn tải được; chúng tôi trích được feature cho 510 video còn lại, với 2990 đoạn GT.
 
 \subsection{Thang đo}
 \begin{itemize}
