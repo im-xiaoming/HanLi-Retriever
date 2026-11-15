@@ -54,7 +54,7 @@ Audio-visual learning, HT-Step, knowledge distillation, multimodal embedding, st
 
 Bài toán khó vì ba lý do. Thứ nhất, cùng một bước như ``đập trứng vào bát'' có thể dài vài giây hoặc vài phút, nên mô hình cần nhìn video ở nhiều độ phân giải thời gian. Thứ hai, các bước của cùng một recipe trông rất giống nhau, nên việc gán đúng bước cho một đoạn đòi hỏi hiểu cả hình ảnh lẫn văn bản. Thứ ba, ngoài vị trí và tên bước, mỗi đoạn tìm được nên có một embedding mô tả nội dung của chính đoạn đó để có thể dùng lại về sau; các mô hình đa phương thức lớn cho embedding tốt nhưng quá chậm để chạy trên mọi đoạn của mọi video.
 
-Các nghiên cứu gần đây như OmniRetriever~\cite{omniretriever} đạt kết quả rất cao trong text-to-video retrieval, nhưng chỉ làm việc trên các đoạn đã cắt sẵn, mỗi đoạn một bước, và với hàng tỉ tham số thì quá tốn kém để chạy trên mọi đoạn của mọi video. Ngược lại, các mô hình temporal localization như ActionFormer~\cite{actionformer} trích xuất được các bước từ một untrimmed video mà vẫn nhỏ gọn.
+Các nghiên cứu gần đây như OmniRetriever~\cite{omniretriever} đạt kết quả rất cao trong any-to-any retrieval giữa văn bản, video và âm thanh, nhưng chỉ làm việc trên các đoạn đã cắt sẵn, mỗi đoạn một bước, và với hàng tỉ tham số thì quá tốn kém để chạy trên mọi đoạn của mọi video. Ngược lại, các mô hình temporal localization như ActionFormer~\cite{actionformer} trích xuất được các bước từ một untrimmed video mà vẫn nhỏ gọn.
 
 Từ đó, chúng tôi kết hợp kiến trúc của ActionFormer để định vị các bước với teacher--student distillation để distill tri thức từ OmniRetriever. Mỗi bước được định vị nhờ vậy có một embedding nằm trong cùng không gian với embedding của OmniRetriever, mà không cần huấn luyện lại hay chạy mô hình hàng tỉ tham số.
 

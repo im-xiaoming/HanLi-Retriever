@@ -1,5 +1,16 @@
 \relax 
 \providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyperFirstAtBeginDocument{\AtBeginDocument}
+\HyperFirstAtBeginDocument{\ifx\hyper@anchor\@undefined
+\global\let\oldnewlabel\newlabel
+\gdef\newlabel#1#2{\newlabelxx{#1}#2}
+\gdef\newlabelxx#1#2#3#4#5#6{\oldnewlabel{#1}{{#2}{#3}}}
+\AtEndDocument{\ifx\hyper@anchor\@undefined
+\let\newlabel\oldnewlabel
+\fi}
+\fi}
+\global\let\hyper@last\relax 
+\gdef\HyperFirstAtBeginDocument#1{#1}
 \providecommand\HyField@AuxAddToFields[1]{}
 \providecommand\HyField@AuxAddToCoFields[2]{}
 \citation{htstep}
@@ -43,26 +54,26 @@
 \newlabel{fig:backbone}{{2}{3}{Backbone audio-visual. Hai chuỗi feature đầu vào (visual feature từ InternVideo2 và audio feature từ BEATs, mỗi chuỗi $768 \times T$ với $T = 256$) được xử lý bởi hai luồng riêng có cùng cấu trúc: hai lớp Conv1D để chiếu feature về 512 kênh, ba khối transformer ở độ phân giải gốc, rồi năm khối transformer, mỗi khối giảm độ dài chuỗi đi một nửa. Kết quả là một temporal pyramid sáu tầng với độ dài $T, T/2, \ldots , T/32$: tầng mịn phù hợp với các bước ngắn, tầng thô phù hợp với các bước dài. Ở mỗi tầng, hai luồng trao đổi thông tin qua cross-attention (mũi tên đỏ), để âm thanh bổ sung cho hình ảnh và ngược lại. Cuối cùng, feature của hai luồng được nối lại thành $\mathbf {F}_l$ có 1024 kênh ở mỗi tầng $l$, làm đầu vào cho recipe conditioning và các head}{figure.2}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Backbone audio-visual}{3}{subsection.3.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-C}}Recipe conditioning}{3}{subsection.3.3}\protected@file@percent }
-\newlabel{eq:artc}{{1}{3}{Recipe conditioning}{equation.1}{}}
+\newlabel{eq:artc}{{1}{3}{Recipe conditioning}{equation.3.1}{}}
 \@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Recipe conditioning. Văn bản các bước của recipe ($C$ bước, mỗi bước một vector 512 chiều) được chiếu lên 1024 chiều, chuẩn hoá bằng LayerNorm và cộng với embedding thứ tự của bước trong recipe, tạo thành key và value. Feature $\mathbf  {F}_l$ của mỗi tầng, sau LayerNorm, đóng vai trò query. Nhờ multi-head attention (8 head), mỗi thời điểm trong video tìm những bước của recipe giống nó nhất và lấy thông tin từ các bước đó. Kết quả qua một lớp chiếu ra, nhân với mask để bỏ các vị trí padding, rồi được cộng residual vào $\mathbf  {F}_l$, cho feature $\mathbf  {F}'_l$. Lớp chiếu ra được khởi tạo bằng 0, nên lúc bắt đầu huấn luyện khối này chưa làm thay đổi feature và chỉ dần học cách dùng văn bản. Cùng một khối được dùng cho cả sáu tầng của pyramid.}}{3}{figure.3}\protected@file@percent }
 \newlabel{fig:recipecond}{{3}{3}{Recipe conditioning. Văn bản các bước của recipe ($C$ bước, mỗi bước một vector 512 chiều) được chiếu lên 1024 chiều, chuẩn hoá bằng LayerNorm và cộng với embedding thứ tự của bước trong recipe, tạo thành key và value. Feature $\mathbf {F}_l$ của mỗi tầng, sau LayerNorm, đóng vai trò query. Nhờ multi-head attention (8 head), mỗi thời điểm trong video tìm những bước của recipe giống nó nhất và lấy thông tin từ các bước đó. Kết quả qua một lớp chiếu ra, nhân với mask để bỏ các vị trí padding, rồi được cộng residual vào $\mathbf {F}_l$, cho feature $\mathbf {F}'_l$. Lớp chiếu ra được khởi tạo bằng 0, nên lúc bắt đầu huấn luyện khối này chưa làm thay đổi feature và chỉ dần học cách dùng văn bản. Cùng một khối được dùng cho cả sáu tầng của pyramid}{figure.3}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-D}}Localization head và step classification}{3}{subsection.3.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-E}}Recipe head}{3}{subsection.3.5}\protected@file@percent }
-\newlabel{eq:art}{{2}{3}{Recipe head}{equation.2}{}}
+\newlabel{eq:art}{{2}{3}{Recipe head}{equation.3.2}{}}
 \citation{vina}
 \citation{baglm}
 \citation{hsd}
 \@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Các head chính của mô hình. \emph  {Event head} cho biết mỗi thời điểm có nằm trong một bước hay không. \emph  {Boundary head} cho biết bước đó bắt đầu và kết thúc ở đâu, kèm một điểm chất lượng dùng để xếp hạng các đoạn. \emph  {Point-wise head} và \emph  {segment-wise head} (màu tím) tạo multimodal embedding cho mỗi thời điểm và cho cả đoạn, được distill từ OmniRetriever. Chữ đỏ in nghiêng là loss của mỗi đầu ra.}}{4}{figure.4}\protected@file@percent }
 \newlabel{fig:heads}{{4}{4}{Các head chính của mô hình. \emph {Event head} cho biết mỗi thời điểm có nằm trong một bước hay không. \emph {Boundary head} cho biết bước đó bắt đầu và kết thúc ở đâu, kèm một điểm chất lượng dùng để xếp hạng các đoạn. \emph {Point-wise head} và \emph {segment-wise head} (màu tím) tạo multimodal embedding cho mỗi thời điểm và cho cả đoạn, được distill từ OmniRetriever. Chữ đỏ in nghiêng là loss của mỗi đầu ra}{figure.4}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-F}}Distillation cho multimodal embedding}{4}{subsection.3.6}\protected@file@percent }
-\newlabel{eq:dev}{{3}{4}{Distillation cho multimodal embedding}{equation.3}{}}
-\newlabel{eq:kd}{{4}{4}{Distillation cho multimodal embedding}{equation.4}{}}
-\newlabel{eq:cos}{{5}{4}{Distillation cho multimodal embedding}{equation.5}{}}
-\newlabel{eq:nce}{{6}{4}{Distillation cho multimodal embedding}{equation.6}{}}
+\newlabel{eq:dev}{{3}{4}{Distillation cho multimodal embedding}{equation.3.3}{}}
+\newlabel{eq:kd}{{4}{4}{Distillation cho multimodal embedding}{equation.3.4}{}}
+\newlabel{eq:cos}{{5}{4}{Distillation cho multimodal embedding}{equation.3.5}{}}
+\newlabel{eq:nce}{{6}{4}{Distillation cho multimodal embedding}{equation.3.6}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-G}}Ridge regression lúc inference}{4}{subsection.3.7}\protected@file@percent }
-\newlabel{eq:ridge}{{7}{4}{Ridge regression lúc inference}{equation.7}{}}
+\newlabel{eq:ridge}{{7}{4}{Ridge regression lúc inference}{equation.3.7}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-H}}Loss tổng}{4}{subsection.3.8}\protected@file@percent }
-\newlabel{eq:total}{{8}{4}{Loss tổng}{equation.8}{}}
+\newlabel{eq:total}{{8}{4}{Loss tổng}{equation.3.8}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {IV}Thực nghiệm}{4}{section.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}Dữ liệu}{4}{subsection.4.1}\protected@file@percent }
 \citation{htstep}
@@ -104,7 +115,7 @@
 \@writefile{lot}{\contentsline {table}{\numberline {VI}{\ignorespaces Các cách cắt video (số vector mỗi video đo trên val)}}{7}{table.6}\protected@file@percent }
 \newlabel{tab:ret_cuts}{{VI}{7}{Các cách cắt video (số vector mỗi video đo trên val)}{table.6}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-B}}Cách cắt và chấm điểm}{7}{subsection.5.2}\protected@file@percent }
-\newlabel{eq:ret_score}{{9}{7}{Cách cắt và chấm điểm}{equation.9}{}}
+\newlabel{eq:ret_score}{{9}{7}{Cách cắt và chấm điểm}{equation.5.9}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-C}}Giao thức đánh giá}{7}{subsection.5.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-D}}Kết quả trên tập val}{7}{subsection.5.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-E}}Benchmark YouCook2 (zero-shot)}{7}{subsection.5.5}\protected@file@percent }
