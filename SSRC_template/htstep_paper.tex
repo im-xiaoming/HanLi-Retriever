@@ -317,9 +317,6 @@ Nearest neighbor ($k = 50$) & 52,76 \\
 \end{tabular}
 \end{table}
 
-\subsection{Độ tin cậy của kết quả}
-Mỗi cấu hình chỉ chạy một seed. Theo ba lượt có cùng recipe head, ArtAcc dao động khoảng $\pm 1{,}5$ điểm (mỗi video là 0,2 điểm); chúng tôi coi chênh lệch mAP dưới khoảng 0,5 là nằm trong dao động. Checkpoint, hệ số $\lambda$ của ridge và các lựa chọn thiết kế đều được chọn trên val\_seen, vì test split không còn chấm được; các số vì vậy có thể lạc quan hơn một chút so với trên dữ liệu chưa thấy.
-
 \section{Ứng dụng: truy hồi bước trong kho video}
 \label{sec:retrieval}
 Cho một câu mô tả một bước nấu ăn, hệ thống phải tìm video chứa bước đó trong một kho và chỉ ra đoạn của bước, tức video corpus moment retrieval (VCMR)~\cite{tvr}. Một vector cho cả video làm mờ từng bước. Chúng tôi cắt video theo bước bằng mô hình ở Mục III, giữ nhiều vector cho mỗi video và chấm bằng MaxSim (điểm của video là điểm cao nhất trong các đoạn), tương tự late interaction của ColBERT~\cite{colbert}.
