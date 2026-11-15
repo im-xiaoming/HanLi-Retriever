@@ -1,11 +1,11 @@
-# HT-Step article grounding (UniAV + OmniRetriever distillation)
+# HT-Step article grounding
 
 Given an instructional video and its article (the steps of a task), the model finds when each step happens. It also
 predicts the article (617 articles) and an OmniRetriever-like vector (3584-d) for every segment.
 
 Backbone: [UniAV](https://arxiv.org/abs/2404.03179) (video: InternVideo2 K400 features, audio: BEATs, cross-attention,
 6-level pyramid). Heads: article conditioning, event + boundary, step choice, article head, omni distillation (KL +
-cosine to the OmniRetriever `encode_av` vector of each segment).
+cosine + InfoNCE to the OmniRetriever `encode_av` vector of each segment; the InfoNCE can be turned off, see Run).
 
 ## Results (val_seen)
 
@@ -65,13 +65,16 @@ Scripts:
        python train.py                                   # one GPU, checkpoints in ckpt/htstep/
        torchrun --nproc_per_node=4 train.py              # several GPUs
        python train.py --output NAME --set opt.epochs=8  # other output folder, override a parameter
+       python train.py --set model.train_cfg.use_omni_nce=False   # omni distillation without InfoNCE (KL + cos only)
        python train.py --eval ckpt/htstep/model_best.pth.tar   # also writes model_best_val_seen.csv
        python benchmark/eval_htstep.py ckpt/htstep/model_best_val_seen.csv   # metrics of other works
 
    On Colab (from `/content`): `BRANCH=main bash colab_train.sh setup` (code + data, ~10 min), then
    `bash colab_train.sh train NAME`.
 
-All parameters are in `libs/core/config.py`. Training is deterministic (same code, data and seed give the same
+All parameters are in `libs/core/config.py`. Omni InfoNCE: `model.train_cfg.use_omni_nce` (default `True`) turns it
+on / off for both omni heads; when off, its teacher queue (`omni_queue_size`) is not used and `omni_*_nce` is logged
+as 0. Its weight and temperature: `loss_weight_omni_nce`, `omni_nce_temperature`. Training is deterministic (same code, data and seed give the same
 numbers); about 12 epochs, ~45 min on an A100.
 
 ## Code
