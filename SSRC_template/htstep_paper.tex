@@ -4,27 +4,34 @@
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
+\usepackage{url}
+\urlstyle{same}
 \usepackage{textcomp,nicefrac}
 \usepackage{multirow}
 \usepackage{tikz}
+\usepackage[hidelinks]{hyperref}
 \usetikzlibrary{arrows.meta,calc}
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
 T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \markboth{STUDENT SCIENTIFIC RESEARCH COMMUNICATION, Volume II, 2026}
-{Nguyễn Ngọc Minh \MakeLowercase{\textit{et al.}}: Grounding Recipe Steps in Long Instructional Videos}
+{Nguyễn Ngọc Minh \MakeLowercase{\textit{et al.}}: Định Vị Các Bước Recipe Trong Instructional Video Dài}
 \begin{document}
-\title{Grounding Recipe Steps in Long Instructional Videos with Audio-Visual Multi-Task Learning and LLM Distillation}
-\author{Nguyễn Ngọc Minh, Phan Công Chiến, and Trần Nhật Hoàng Anh
-\thanks{Bản thảo nộp ngày \ldots/\ldots/2026, bản chỉnh sửa nộp ngày \ldots/\ldots/2026. Nghiên cứu được thực hiện trong khuôn khổ khoá luận tốt nghiệp tại Khoa Công nghệ Thông tin, Trường Đại học Công nghiệp TP. Hồ Chí Minh. (Điền thông tin tài trợ nếu có; nếu không, ghi: ``Nghiên cứu không nhận tài trợ từ tổ chức nào.'')}
-\thanks{Nguyễn Ngọc Minh và Phan Công Chiến là sinh viên Khoa Công nghệ Thông tin, Trường Đại học Công nghiệp TP. Hồ Chí Minh, 12 Nguyễn Văn Bảo, TP. Hồ Chí Minh, Việt Nam (e-mail: \ldots; \ldots). Hai tác giả đóng góp như nhau cho việc xây dựng mô hình, chạy thực nghiệm và viết bài.}
-\thanks{ThS. Trần Nhật Hoàng Anh, giảng viên hướng dẫn, công tác tại Khoa Công nghệ Thông tin, Trường Đại học Công nghiệp TP. Hồ Chí Minh, 12 Nguyễn Văn Bảo, TP. Hồ Chí Minh, Việt Nam (e-mail: \ldots). Tác giả liên hệ: \ldots.}}
+\title{Định Vị Các Bước Recipe Trong Instructional Video Dài Bằng Audio-Visual Multi-Task Learning Và LLM Distillation}
+\author{\begin{tabular}{c}
+Nguyễn Ngọc Minh\textsuperscript{1}, Phan Công Chiến\textsuperscript{1}, và Trần Nhật Hoàng Anh\textsuperscript{1}\\
+\textsuperscript{1}Khoa Công nghệ Thông tin\\
+Trường Đại học Công nghiệp TP.HCM\\
+Email: \{minhnguyen47431; phancongchien8278; hoanganh.trannhat\}@gmail.com\\
+Code: {\mdseries\itshape\color{blue!70!black}\href{https://github.com/im-xiaoming/instructional-step-grounding}{github.com/im-xiaoming/instructional-step-grounding}}
+\end{tabular}%
+\thanks{Bản thảo nộp ngày 15/11/2026, bản chỉnh sửa nộp ngày 15/11/2026. Nghiên cứu được thực hiện trong khuôn khổ khoá luận tốt nghiệp tại Khoa Công nghệ Thông tin, Trường Đại học Công nghiệp TP. Hồ Chí Minh. (Điền thông tin tài trợ nếu có; nếu không, ghi: ``Nghiên cứu không nhận tài trợ từ tổ chức nào.'') Nguyễn Ngọc Minh và Phan Công Chiến đóng góp như nhau cho việc xây dựng mô hình, chạy thực nghiệm và viết bài. Tác giả liên hệ: phancongchien8278@gmail.com.}}
 
 \maketitle
 
 \begin{abstract}
-Instructional videos are often long, and only a small fraction of each video shows the steps of the task, so viewers need to know where every step starts and ends. This paper presents a multi-task audio-visual model that solves \emph{three tasks} on the HT-Step dataset: localizing the steps of a recipe in a video, recognizing which recipe the video follows, and producing for every localized segment a multimodal embedding of its content. The model builds on precomputed visual and audio features and a two-stream audio-visual backbone with a multi-scale temporal pyramid, so that both short and long steps can be detected. The multimodal embedding is learned by distillation from a \emph{seven-billion-parameter} audio-visual retrieval model. Distillation teaches our model, which has only 137 million parameters, about fifty times fewer, to reproduce these embeddings from the features it already computes, through a point-wise and a segment-wise head. On the validation split of seen activities, the model reaches a mean average precision of 30.98 for step localization, recognizes the correct recipe for 59.8\% of the videos, and reaches a mean-centered cosine similarity of 0.660 with the embeddings of the large model. We further use the localized segments and their distilled embeddings as an event-aware multi-vector index, called UEMR, for text-to-video retrieval and moment localization; its parameters are selected on the same validation split, and its zero-shot evaluation on YouCook2 is pending.
+Instructional videos are long, and only a small part of each video shows the steps of the task. This paper presents a multi-task audio-visual model for the HT-Step dataset that localizes the steps of a recipe in a video, recognizes the recipe, and produces a multimodal embedding for every localized segment. The model uses precomputed visual and audio features and a two-stream audio-visual backbone with a multi-scale temporal pyramid. The embeddings are distilled from a \emph{seven-billion-parameter} audio-visual retrieval model into our model of 137 million parameters, through a point-wise and a segment-wise head. On the validation split of seen activities, the model reaches a mean average precision of 30.98 for step localization, recognizes the correct recipe for 59.8\% of the videos, and reaches a mean-centered cosine similarity of 0.660 with the embeddings of the large model. The localized segments and their embeddings are further used as an event-aware multi-vector index, called UEMR, for text-to-video retrieval and moment localization.
 
-Instructional video thường dài, và chỉ một phần nhỏ thời lượng của mỗi video thể hiện các bước thực hiện, nên người xem cần biết mỗi bước bắt đầu và kết thúc ở đâu. Bài báo trình bày một multi-task audio-visual model giải quyết \emph{ba nhiệm vụ} trên bộ dữ liệu HT-Step: step localization (định vị các bước của một recipe trong video), recipe recognition (nhận biết video đang làm theo recipe nào), và tạo cho mỗi segment được định vị một multimodal embedding biểu diễn nội dung của segment đó. Mô hình dựa trên các visual feature và audio feature được trích sẵn, cùng một two-stream audio-visual backbone với multi-scale temporal pyramid, nhờ đó phát hiện được cả những bước ngắn lẫn những bước dài. Multimodal embedding được học bằng knowledge distillation từ một audio-visual retrieval model \emph{bảy tỉ tham số}. Distillation dạy mô hình của chúng tôi, chỉ có 137 triệu tham số, tức nhỏ hơn khoảng năm mươi lần, tái tạo các embedding này từ chính những feature mà nó đã tính, thông qua một point-wise head và một segment-wise head. Trên validation split của các seen activity, mô hình đạt mean average precision 30,98 cho step localization, nhận biết đúng recipe cho 59,8\% số video, và đạt mean-centered cosine similarity 0,660 so với embedding của mô hình lớn. Các đoạn được định vị cùng embedding đã distill còn được dùng làm một chỉ mục đa vector theo sự kiện, gọi là UEMR, cho truy hồi video và định vị khoảnh khắc; tham số của UEMR được chọn trên cùng validation split, và kết quả zero-shot trên YouCook2 đang chờ.
+Instructional video thường dài, và chỉ một phần nhỏ của mỗi video thể hiện các bước thực hiện. Bài báo trình bày một mô hình multi-task audio-visual trên bộ dữ liệu HT-Step, đồng thời định vị các bước của recipe trong video (step localization), nhận biết recipe của video (recipe recognition) và tạo multimodal embedding cho mỗi đoạn được định vị. Mô hình dùng visual feature và audio feature trích sẵn cùng một two-stream audio-visual backbone với multi-scale temporal pyramid. Embedding được distill từ một mô hình audio-visual retrieval \emph{bảy tỉ tham số} vào mô hình 137 triệu tham số của chúng tôi, qua một point-wise head và một segment-wise head. Trên validation split của các seen activity, mô hình đạt mean average precision 30,98 cho step localization, nhận biết đúng recipe cho 59,8\% số video, và đạt mean-centered cosine similarity 0,660 so với embedding của mô hình lớn. Các đoạn được định vị cùng embedding còn được dùng làm một chỉ mục đa vector theo sự kiện, gọi là UEMR, cho truy hồi video và định vị khoảnh khắc.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -46,16 +53,16 @@ Audio-visual learning, HT-Step, knowledge distillation, multimodal embedding, st
 
 Bài toán khó vì ba lý do. Thứ nhất, cùng một bước như ``đập trứng vào bát'' có thể dài vài giây hoặc vài phút, nên mô hình cần nhìn video ở nhiều độ phân giải thời gian. Thứ hai, các bước của cùng một recipe trông rất giống nhau, nên việc gán đúng bước cho một đoạn đòi hỏi hiểu cả hình ảnh lẫn văn bản. Thứ ba, ở các ứng dụng retrieval, mỗi đoạn tìm được còn cần một vector mô tả để so với câu truy vấn; các mô hình đa phương thức lớn cho vector tốt nhưng quá chậm để chạy trên mọi đoạn của mọi video.
 
-Các nghiên cứu gần đây như OmniRetriever~\cite{omniretriever} đạt kết quả rất cao trong text-to-video retrieval, nhưng chỉ làm việc trên các đoạn đã cắt sẵn, mỗi đoạn một step, và với hàng tỉ tham số thì quá tốn kém để chạy trên mọi đoạn của mọi video. Ngược lại, các mô hình temporal localization như ActionFormer~\cite{actionformer} trích xuất được các step từ một untrimmed video mà vẫn nhỏ gọn.
+Các nghiên cứu gần đây như OmniRetriever~\cite{omniretriever} đạt kết quả rất cao trong text-to-video retrieval, nhưng chỉ làm việc trên các đoạn đã cắt sẵn, mỗi đoạn một bước, và với hàng tỉ tham số thì quá tốn kém để chạy trên mọi đoạn của mọi video. Ngược lại, các mô hình temporal localization như ActionFormer~\cite{actionformer} trích xuất được các bước từ một untrimmed video mà vẫn nhỏ gọn.
 
-Từ đó, chúng tôi kết hợp kiến trúc của ActionFormer để định vị các step với teacher--student distillation để distill tri thức từ OmniRetriever. Mỗi step được định vị nhờ vậy có một embedding trong không gian của OmniRetriever, sẵn sàng cho text-based retrieval, mà không cần huấn luyện lại hay chạy mô hình hàng tỉ tham số.
+Từ đó, chúng tôi kết hợp kiến trúc của ActionFormer để định vị các bước với teacher--student distillation để distill tri thức từ OmniRetriever. Mỗi bước được định vị nhờ vậy có một embedding trong không gian của OmniRetriever, sẵn sàng cho text-based retrieval, mà không cần huấn luyện lại hay chạy mô hình hàng tỉ tham số.
 
-Bài báo đề xuất một multi-task model theo hướng ActionFormer~\cite{actionformer}, mở rộng thành hai luồng audio-visual, và giải đồng thời cả ba việc. Các đóng góp chính gồm:
+Bài báo đề xuất một mô hình multi-task theo hướng ActionFormer~\cite{actionformer}, mở rộng thành hai luồng audio-visual, và giải đồng thời cả ba việc. Các đóng góp chính gồm:
 \begin{itemize}
 \item Một mô hình step localization theo hướng ActionFormer~\cite{actionformer} có conditioning theo văn bản các bước của recipe, kèm một recipe head và một step classification head cho mỗi đoạn.
-\item Một cách distill embedding của audio-visual retrieval model bảy tỉ tham số vào một point-wise head và một segment-wise head, với cosine loss đã trừ trung bình để khớp với thang đo.
-\item Một ridge regression trên input feature, ghép lúc inference, tăng similarity với teacher embedding từ 66,01 lên 73,86 mà không cần huấn luyện lại.
-\item Một loạt ablation và phân tích upper bound, cho biết thành phần nào có ích và giới hạn còn lại nằm ở đâu.
+\item Một cách distill embedding của mô hình audio-visual retrieval bảy tỉ tham số vào một point-wise head và một segment-wise head, với cosine loss đã trừ trung bình để khớp với thang đo.
+\item Một ridge regression trên input feature, ghép lúc inference, tăng độ tương đồng với teacher embedding từ 66,01 lên 73,86 mà không cần huấn luyện lại.
+\item Một loạt ablation và phân tích cận trên, cho biết thành phần nào có ích và giới hạn còn lại nằm ở đâu.
 \item UEMR (Mục~\ref{sec:uemr}): một chỉ mục đa vector theo sự kiện, dùng các đoạn và segment-wise head của mô hình cho truy hồi video và định vị khoảnh khắc, kèm một giao thức đánh giá không rò rỉ recipe, multi-positive, tách tập dev và benchmark, zero-shot.
 \end{itemize}
 
@@ -231,15 +238,15 @@ BaGLM, InternVL2.5-8B~\cite{baglm} & training-free & val\_seen (600) & 15,90 & 6
 UniTime-7B (trong~\cite{hsd}) & grounding câu & val\_seen (600) & 19,92 & 11,48 & 5,52 & 12,27 \\
 HSD, Qwen3-VL-8B~\cite{hsd} & training-free & val\_seen (600) & 26,45 & 13,78 & 6,16 & 15,13 \\
 \hline
-\textbf{Ours} & supervised & val\_seen (600) & 37,72 & 27,41 & 14,42 & 26,73 \\
-\textbf{Ours} & supervised & val\_seen (510) & 43,58 & 31,71 & 16,92 & 30,99$^{\mathrm{a}}$ \\
+\textbf{Của chúng tôi} & supervised & val\_seen (600) & 37,72 & 27,41 & 14,42 & 26,73 \\
+\textbf{Của chúng tôi} & supervised & val\_seen (510) & 43,58 & 31,71 & 16,92 & 30,99$^{\mathrm{a}}$ \\
 \hline
 \multicolumn{7}{l}{$^{\mathrm{a}}$Chấm lại trên CPU bằng mã chấm chính thức; trên GPU là 30,98.}\\
 \end{tabular}
 \end{table*}
 
 \subsection{Ablation study}
-Bảng~\ref{tab:ablation} cho kết quả khi thêm dần từng thành phần; mỗi dòng thêm thay đổi vào dòng ngay trên. Các số lấy tại checkpoint được chọn theo mAP của mỗi lượt.
+Bảng~\ref{tab:ablation} cho kết quả khi thêm dần từng thành phần; mỗi dòng từ (a) đến (g) thêm thay đổi vào dòng ngay trên, còn dòng (h) bỏ InfoNCE khỏi mô hình đầy đủ (g). Mọi dòng được chấm lại trên CPU từ checkpoint được chọn theo mAP của mỗi lượt, bằng đúng phiên bản mã đã huấn luyện lượt đó; vì vậy mAP của (f) và (g) là 30,99, so với 30,98 khi chấm trên GPU.
 
 \begin{table*}[t]
 \caption{Thêm dần từng thành phần (val\_seen, 510 video)}
@@ -251,22 +258,25 @@ Bảng~\ref{tab:ablation} cho kết quả khi thêm dần từng thành phần; 
 \hline
 Cấu hình & mAP & R@0,5 & mIoU & Acc & ArtAcc & OmniCosC & OmniR@1 \\
 \hline
-(a) Mô hình gốc: SegmentContext lấy trung bình, segment-wise head chỉ dùng tầng 0, distillation bằng KL + cos & 30,83 & 36,05 & 34,98 & 66,97 & 61,18 & 71,83 & 51,17 \\
-(b) + SegmentContext dùng attention pooling & 30,89 & 35,72 & 34,66 & 67,65 & 58,04 & 71,77 & 52,04 \\
+(a) Mô hình gốc: SegmentContext lấy trung bình, segment-wise head chỉ dùng tầng 0, distillation bằng KL + cos & 30,55 & 36,29 & 34,88 & 66,50 & 61,57 & 71,84 & 50,07 \\
+(b) + SegmentContext dùng attention pooling & 30,87 & 35,62 & 34,39 & 66,83 & 58,24 & 71,85 & 51,30 \\
 (c) + InfoNCE có hàng đợi, segment-wise head dùng cả 6 tầng & 29,57 & 34,95 & 34,39 & 67,93 & 60,59 & 67,71 & 65,38 \\
-(d) + lịch học 15 epoch & 29,70 & 34,41 & 33,89 & 65,80 & 60,59 & 68,15 & 64,11 \\
-(e) + nhánh tuyến tính, phần lệch quanh $\boldsymbol{\mu}$, cos trừ trung bình, ghép hai head & 30,28 & 35,89 & 34,59 & 68,41 & 59,02 & 65,81 & 67,63 \\
-(f) + cắt ngẫu nhiên nhẹ hơn (95--100\%) & 30,98 & 36,09 & 34,45 & 70,06 & 59,80 & 66,01 & 69,00 \\
-(g) + ridge regression lúc inference (mô hình đầy đủ) & 30,98 & 36,09 & 34,45 & 70,06 & 59,80 & 73,86 & 69,90 \\
+(d) + lịch học 15 epoch & 29,71 & 34,41 & 33,89 & 65,80 & 60,59 & 68,15 & 64,11 \\
+(e) + nhánh tuyến tính, phần lệch quanh $\boldsymbol{\mu}$, cos trừ trung bình, ghép hai head & 30,29 & 35,89 & 34,60 & 68,41 & 59,02 & 65,81 & 67,63 \\
+(f) + cắt ngẫu nhiên nhẹ hơn (95--100\%) & 30,99 & 36,09 & 34,45 & 70,06 & 59,80 & 66,01 & 69,00 \\
+(g) + ridge regression lúc inference (mô hình đầy đủ) & 30,99 & 36,09 & 34,45 & 70,06 & 59,80 & 73,86 & 69,90 \\
+\hline
+(h) (g) bỏ InfoNCE của hai student head (chỉ KL + cos) & 31,09 & 36,62 & 35,40 & 69,12 & 59,61 & 74,83 & 62,47 \\
 \hline
 \end{tabular}
 \end{table*}
 
 Một số nhận xét:
 \begin{itemize}
-\item \textbf{InfoNCE đổi OmniCosC lấy OmniR@1.} Từ (b) sang (c), OmniR@1 tăng từ 52,04 lên 65,38 nhưng OmniCosC giảm từ 71,77 xuống 67,71. InfoNCE dạy student gần teacher của mình \emph{hơn} các teacher khác, chứ không kéo student \emph{sát} teacher.
+\item \textbf{InfoNCE đổi OmniCosC lấy OmniR@1.} Từ (b) sang (c), OmniR@1 tăng từ 51,30 lên 65,38 nhưng OmniCosC giảm từ 71,85 xuống 67,71. InfoNCE dạy student gần teacher của mình \emph{hơn} các teacher khác, chứ không kéo student \emph{sát} teacher.
 \item \textbf{Cắt ngẫu nhiên nhẹ hơn giúp định vị.} Từ (e) sang (f), mAP tăng 0,70 và Acc tăng 1,65.
 \item \textbf{Ridge regression bù lại phần OmniCosC đã mất.} Dòng (g) đạt OmniCosC 73,86, cao hơn cả dòng (a) không dùng InfoNCE, trong khi vẫn giữ OmniR@1 gần 70.
+\item \textbf{Bỏ InfoNCE khỏi mô hình đầy đủ xác nhận lại sự đánh đổi trên.} Dòng (h) tăng OmniCosC lên 74,83 và mAP lên 31,09, nhưng OmniR@1 giảm 7,43 điểm, còn 62,47. Chúng tôi giữ (g) làm mô hình đầy đủ vì embedding của nó phân biệt các đoạn tốt hơn hẳn, trong khi mAP chỉ kém 0,10, nằm trong dao động.
 \end{itemize}
 
 Một số thay đổi khác đã thử nhưng không giữ: (i) gộp feature cả sáu tầng cho recipe head (ArtAcc tốt nhất 60,20 với trung bình và max, 56,67 với attention pooling, so với 61,18 khi chỉ dùng tầng 0, hai cách đầu chạy với batch 64); (ii) khởi tạo Xavier cho mọi head, làm ArtAcc giảm 2,4 và OmniCosC giảm 3,5; (iii) batch 64 với cùng learning rate, làm mAP giảm khoảng 1,5; (iv) $T = 320$ thay cho 256, làm mAP giảm 0,7.
@@ -303,7 +313,7 @@ Phần này dùng bộ định vị ở trên cho một bài toán khác: ngư�
 \subsection{Chỉ mục và chấm điểm}
 \textbf{Mô hình.} Bộ định vị là UniAV ở cấu hình (a) của Bảng~\ref{tab:ablation}, huấn luyện lại một lần với teacher là Omni \texttt{best}: OmniRetriever với adapter LoRA của nhóm trên HT-Step, cũng là mô hình mã hoá câu hỏi. Nhờ vậy vector của segment-wise head nằm trong cùng không gian với câu hỏi. Mọi vector được chuẩn hoá L2.
 
-\textbf{Không rò rỉ recipe.} Recipe conditioning~\eqref{eq:artc} cần văn bản các bước của recipe, vốn lấy từ nhãn. Với truy hồi, dùng nhãn nghĩa là đọc trước đáp án. UEMR thay các bước này bằng các bước của recipe mà recipe head đoán đúng thứ nhất (top-1). Thay đổi nằm trong một adapter, code mô hình giữ nguyên.
+\textbf{Không rò rỉ recipe.} Recipe conditioning~\eqref{eq:artc} cần văn bản các bước của recipe, vốn lấy từ nhãn. Với truy hồi, dùng nhãn nghĩa là đọc trước đáp án. UEMR thay các bước này bằng các bước của recipe mà recipe head đoán đúng thứ nhất (top-1). Thay đổi nằm trong một adapter, mã nguồn mô hình giữ nguyên.
 
 \textbf{Cắt đoạn.} R6 gồm các đoạn dự đoán có điểm không nhỏ hơn ngưỡng $\theta$; video không có đoạn nào đạt ngưỡng thì giữ đoạn điểm cao nhất. Các đoạn trùng nhau nhiều được gộp, đoạn quá ngắn được nới ra. R8 là R6 cộng các đoạn lấp: mỗi khoảng chưa được phủ, nếu dài ít nhất $L_{\min}$, được chia đều thành các cửa sổ dài xấp xỉ $L_{\mathrm{fill}}$.
 
@@ -340,7 +350,7 @@ UEMR-Hybrid (C1) & đoạn R6: $Z_b(\cos(\mathbf{t}, \mathbf{e}_i))$; đoạn l�
 
 \textbf{Cách cắt để so sánh.} R0: một vector cho cả video. R1: trung bình các vector R6. R2: cắt đều độ dài $L$, với $L$ chọn để tổng số đoạn bằng R8. R3: cắt đều thành đúng số đoạn R6 của video. R7: đoạn GT (cận trên). R2 và R3 tách tác dụng của ranh giới khỏi tác dụng của số đoạn.
 
-\textbf{Chọn trước, chấm sau.} Trên dev, mọi cấu hình đã chấm đều được ghi lại; tham số và biến thể chính được chọn bằng luật viết trước rồi khoá trong một file cấu hình có mã băm. Trên benchmark, protocol và tiêu chí thắng thua (Bảng~\ref{tab:uemr_bench}) được khoá trước khi chấm; một tiêu chí đạt khi cận dưới của khoảng tin cậy lớn hơn 0.
+\textbf{Chọn trước, chấm sau.} Trên dev, mọi cấu hình đã chấm đều được ghi lại; tham số và biến thể chính được chọn bằng luật viết trước rồi khoá trong một tệp cấu hình có mã băm. Trên benchmark, giao thức và tiêu chí thắng thua (Bảng~\ref{tab:uemr_bench}) được khoá trước khi chấm; một tiêu chí đạt khi cận dưới của khoảng tin cậy lớn hơn 0.
 
 \subsection{Kết quả trên tập dev}
 Các lựa chọn theo luật viết trước:
@@ -403,7 +413,7 @@ Bảng~\ref{tab:uemr_dev} và Bảng~\ref{tab:uemr_pairs} cho thấy trên dev:
 \textbf{Phân tích.} Với 1687 câu hỏi có bước bị R6 bỏ sót (tIoU nhỏ hơn 0,3), R8 $-$ R6 là +5,69 [+2,36; +8,84]; với 1303 câu hỏi có bước được R6 bắt, R6 $-$ R3 là +7,52 [+3,87; +11,14]. Đoạn lấp và ranh giới vì vậy bổ trợ nhau. Trên R8, chỉ cột (b) đúng ở hạng 1 với 459 câu, chỉ cột (S) đúng với 428 câu, và hệ số Spearman giữa thứ hạng của hai cột là 0,587; giả thuyết của chúng tôi là sự bổ trợ này giải thích vì sao (U) hơn từng cột, nhưng chưa có phép kiểm nhân quả. Thay recipe đoán bằng một recipe ngẫu nhiên làm cột (S) trên R8 giảm 22,58 [19,71; 25,57] điểm R@1: vector của segment-wise head mang thông tin về recipe, và cũng nhạy với việc đoán sai recipe.
 
 \subsection{Benchmark YouCook2 (zero-shot)}
-Kho benchmark gồm 635 trong số 1500 video YouCook2 có annotation và có mp4. Việc trích feature dừng giữa chừng; các video được giữ là các video đã trích xong, theo thứ tự tên ID, không dựa vào nhãn hay kết quả. Câu hỏi chỉ lấy từ 635 video này, và mọi tham số giữ nguyên như đã khoá trên dev. Trên kho này, recall của bước GT ở tIoU 0,3 / 0,5 / 0,7 là 37,99 / 24,86 / 13,67, với trung bình 5,55 đoạn R6 mỗi video so với 7,82 bước GT.
+Kho benchmark gồm 635 trong số 1500 video YouCook2 có nhãn và có tệp mp4. Việc trích feature dừng giữa chừng; các video được giữ là các video đã trích xong, theo thứ tự tên ID, không dựa vào nhãn hay kết quả. Câu hỏi chỉ lấy từ 635 video này, và mọi tham số giữ nguyên như đã khoá trên dev. Trên kho này, recall của bước GT ở tIoU 0,3 / 0,5 / 0,7 là 37,99 / 24,86 / 13,67, với trung bình 5,55 đoạn R6 mỗi video so với 7,82 bước GT.
 
 \begin{table}[t]
 \caption{UEMR trên YouCook2, multi-positive, R@1: tiêu chí viết trước}
@@ -429,7 +439,7 @@ K5 & (U) $-$ (b), trên R8 & \multicolumn{2}{c|}{[CHỜ KẾT QUẢ BENCHMARK]} 
 \textbf{Hạn chế.} Số dev lạc quan và $\beta$ nằm ở biên của lưới. Trên dev, R8 chưa hơn R2 có ý nghĩa thống kê. Lúc huấn luyện, bộ định vị luôn được cho recipe đúng, còn lúc truy hồi nó phải tự đoán; recipe đoán sai trên miền khác có thể làm cột (S) yếu đi (giả thuyết, chưa đo). Kho benchmark chỉ gồm 635 trong 1500 video, mỗi cấu hình chạy một seed, và dữ liệu pretrain của mô hình truy hồi gốc cũng lấy từ YouTube nên không loại trừ hết khả năng trùng video với benchmark.
 
 \section{Kết luận}
-Bài báo trình bày một mô hình multi-task audio-visual cho instructional video nấu ăn, thực hiện đồng thời step localization, recipe recognition và tạo multimodal embedding cho mỗi đoạn. Trên val\_seen của HT-Step, mô hình đạt mAP 30,98, cao hơn hẳn các phương pháp training-free gần đây và xấp xỉ các mô hình supervised của bài báo gốc. Với multimodal embedding, việc ghép một ridge regression dạng đóng lúc inference tăng OmniCosC gần tám điểm mà không cần huấn luyện lại, và phân tích upper bound cho thấy giới hạn còn lại nằm chủ yếu ở input feature. Hướng tiếp theo gồm dùng frame feature và lời nói giàu hơn, đánh giá trên tập dữ liệu khác, và chạy nhiều seed để có khoảng tin cậy.
+Bài báo trình bày một mô hình multi-task audio-visual cho instructional video nấu ăn, thực hiện đồng thời step localization, recipe recognition và tạo multimodal embedding cho mỗi đoạn. Trên val\_seen của HT-Step, mô hình đạt mAP 30,98, cao hơn hẳn các phương pháp training-free gần đây và xấp xỉ các mô hình supervised của bài báo gốc. Với multimodal embedding, việc ghép một ridge regression dạng đóng lúc inference tăng OmniCosC gần tám điểm mà không cần huấn luyện lại, và phân tích cận trên cho thấy giới hạn còn lại nằm chủ yếu ở input feature. Hướng tiếp theo gồm dùng frame feature và lời nói giàu hơn, đánh giá trên tập dữ liệu khác, và chạy nhiều seed để có khoảng tin cậy.
 
 Ở phần ứng dụng, UEMR dùng các đoạn và segment-wise head của mô hình làm chỉ mục đa vector cho truy hồi video và định vị khoảnh khắc. Trên tập dev, các lựa chọn đã khoá là $\theta = 0{,}402$, $(L_{\min}, L_{\mathrm{fill}}) = (5, 10)$ giây và UEMR-Full với $\beta = 1{,}0$. [CHỜ KẾT QUẢ BENCHMARK]: kết luận về hiệu quả zero-shot trên YouCook2 chỉ được viết khi tiêu chí K1, K2 đạt.
 
