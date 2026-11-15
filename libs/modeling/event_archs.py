@@ -163,4 +163,5 @@ class EventCaptionTransformer(nn.Module):
         if self.training:
             return event_losses(self, video_list, fpn_masks, ev, bd, qu, em, omni_em, raw0, len0, art_logits,
                                 feats, lens)
-        return event_inference(self, video_list, fpn_masks, ev, bd, qu, raw0, len0, cands, art_logits, feats, lens)
+        return event_inference(self, video_list, fpn_masks, ev, bd, qu, raw0, len0, cands, art_logits, feats, lens,
+                               omni_em)

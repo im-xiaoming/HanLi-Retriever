@@ -11,13 +11,31 @@ def omni_gt_vectors(
     video,      # the dict of one validation video (segments in steps, omni_seg, omni_ok)
     feats,      # per level (1, D, T_l) pyramid features of the video
     lens,       # (1, L) real steps of the video at every level
+    omni_em,    # (P, 3584) point head: normalised omni vector of every point of the video
+    valid,      # (P,) bool, True at points of real steps
 ):
-    """Span head vs teacher on every GT segment of the video that has a teacher (start and end given)."""
-    has_teacher = video['omni_ok'][video['labels']]                          # (n,)
-    segments = video['segments'][has_teacher].to(feats[0].device).float()       # (n', 2) in steps
-    students = omni_span(feats, lens, segments[None])[0]                       # (n', 3584)
-    teachers = video['omni_seg'][video['labels']][has_teacher]                # (n', 3584)
-    return students.cpu(), teachers.cpu()
+    """Student vectors of every GT segment of the video that has a teacher (start and end given), from:
+    span   : the span head
+    point  : the point head, mean of the vectors of the points assigned to the segment (the same points as in
+             training: gt_cls_labels); a segment without any such point takes the span vector
+    student: the two combined, normalize(span + point) (both unit vectors, so the same weight)
+    Returns the three (n', 3584) and the teachers (n', 3584)."""
+    dev = feats[0].device
+    labels = video['labels']
+    has_teacher = video['omni_ok'][labels]                                    # (n,)
+    slots = labels[has_teacher].to(dev)                                       # (n',) slot of every segment
+    segments = video['segments'][has_teacher].to(dev).float()                 # (n', 2) in steps
+    span = omni_span(feats, lens, segments[None])[0]                          # (n', 3584)
+
+    assign = video['gt_cls_labels'].to(dev)[:, slots].t().bool() & valid[None]   # (n', P) points of every segment
+    w = assign.to(omni_em.dtype)
+    n_pts = w.sum(-1, keepdim=True)                                           # (n', 1)
+    point = F.normalize(w @ omni_em, dim=-1)                                  # (n', 3584) mean direction
+    point = torch.where(n_pts > 0, point, span)                               # no point: the span vector
+
+    student = F.normalize(span + point, dim=-1)
+    teachers = video['omni_seg'][labels][has_teacher]                         # (n', 3584)
+    return student.cpu(), span.cpu(), point.cpu(), teachers.cpu()
 
 
 @torch.no_grad()
@@ -34,6 +52,7 @@ def event_inference(
     art_logits,  # (B, A) article head logits
     feats,       # per level (B, D, T_l) pyramid features (for the omni span head)
     lens,        # (B, L) real steps of every level
+    omni_em,     # (B, P, 3584) point head: normalised omni vector of every point
 ):
     """Score of a segment = event score times IoU-quality score. Returns one dict per video:
     segments (K, 2) in seconds, best first; labels (K,) the step of every segment, label_probs (K,) its
@@ -87,12 +106,14 @@ def event_inference(
         st, nf, fps = v['feat_stride'], v['feat_num_frames'], v['fps']
         segs = ((segs * st + 0.5 * nf) / fps).clamp(min=0.0, max=float(v['duration']))
 
-        # omni span head: student and teacher vector of every GT segment, for the distance between them
-        omni_student, omni_teacher = omni_gt_vectors(model.omni_span, v, [f[b:b + 1] for f in feats], lens[b:b + 1])
+        # omni: student (span + point heads) and teacher vector of every GT segment, for the distance between them
+        omni_student, omni_span_st, omni_point_st, omni_teacher = omni_gt_vectors(
+            model.omni_span, v, [f[b:b + 1] for f in feats], lens[b:b + 1], omni_em[b], valid[b])
 
         out.append({'video_id': v['video_id'], 'segments': segs, 'scores': scores,
                     'labels': cand[j].cpu(), 'label_probs': lp.exp().cpu(),
                     'article_pred': int(art_logits[b].argmax()),
                     'omni_student': omni_student, 'omni_teacher': omni_teacher,
+                    'omni_student_span': omni_span_st, 'omni_student_point': omni_point_st,
                     'gt_segments': v['segments_sec'], 'gt_text': v['cap_text']})
     return out

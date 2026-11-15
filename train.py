@@ -56,7 +56,10 @@ def apply_overrides(settings):
 def metrics_line(m):
     """One line with the validation metrics."""
     names = ['R@0.5', 'mIoU', 'Acc', 'mAP', 'ArtAcc', 'OmniCosC', 'OmniR@1']
-    return '  '.join(f"{name} {m[name]:.2f}" for name in names)
+    line = '  '.join(f"{name} {m[name]:.2f}" for name in names)
+    # omni of the span head and the point head alone (OmniCosC / OmniR@1 = the two combined)
+    return line + '  [span %.2f/%.2f  pt %.2f/%.2f]' % (m['OmniCosC_span'], m['OmniR@1_span'],
+                                                         m['OmniCosC_pt'], m['OmniR@1_pt'])
 
 
 def main(args):
