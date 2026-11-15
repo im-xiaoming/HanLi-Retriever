@@ -19,7 +19,7 @@ cfg = {
         # <video_id>.npz: InternVideo2 K400 f16 video k768 + BEATs audio a768, one row per second
         'feat_folder': './datasets/k400_feats',
         'default_fps': 16,
-        'max_seq_len': 256,      # every video is resampled to 256 steps
+        'max_seq_len': 312,      # every video is resampled to 256 steps
         'trunc_thresh': 0.25,
         'crop_ratio': [0.95, 1.0],
         'num_classes': 48,       # at most 48 GT segments per video (none of the videos with features has more)
@@ -46,7 +46,7 @@ cfg = {
         'head_kernel_size': 3,
         'head_with_ln': True,
         'use_abs_pe': True,
-        'max_seq_len': 256,
+        'max_seq_len': 312,
         'clip_dim': 512,
         'train_cfg': {
             'loss_weight_reg': 1.0,
