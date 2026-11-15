@@ -22,9 +22,9 @@ T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \maketitle
 
 \begin{abstract}
-Instructional videos are often long, and only a small fraction of each video shows the steps of the task, so viewers need to know where every step starts and ends. This paper presents a multi-task audio-visual model that solves \emph{three tasks} on the HT-Step dataset: localizing the steps of a recipe in a video, recognizing which recipe the video follows, and producing for every localized segment a multimodal embedding of its content. The model builds on precomputed visual and audio features and a two-stream audio-visual backbone with a multi-scale temporal pyramid, so that both short and long steps can be detected. The multimodal embedding is learned by distillation from a \emph{seven-billion-parameter} audio-visual retrieval model. Distillation teaches our model, which has only 137 million parameters, about fifty times fewer, to reproduce these embeddings from the features it already computes, through a point-wise and a segment-wise head. On the validation split of seen activities, the model reaches a mean average precision of 30.98 for step localization, recognizes the correct recipe for 59.8\% of the videos, and reaches a mean-centered cosine similarity of 0.660 with the embeddings of the large model.
+Instructional videos are often long, and only a small fraction of each video shows the steps of the task, so viewers need to know where every step starts and ends. This paper presents a multi-task audio-visual model that solves \emph{three tasks} on the HT-Step dataset: localizing the steps of a recipe in a video, recognizing which recipe the video follows, and producing for every localized segment a multimodal embedding of its content. The model builds on precomputed visual and audio features and a two-stream audio-visual backbone with a multi-scale temporal pyramid, so that both short and long steps can be detected. The multimodal embedding is learned by distillation from a \emph{seven-billion-parameter} audio-visual retrieval model. Distillation teaches our model, which has only 137 million parameters, about fifty times fewer, to reproduce these embeddings from the features it already computes, through a point-wise and a segment-wise head. On the validation split of seen activities, the model reaches a mean average precision of 30.98 for step localization, recognizes the correct recipe for 59.8\% of the videos, and reaches a mean-centered cosine similarity of 0.660 with the embeddings of the large model. We further use the localized segments and their distilled embeddings as an event-aware multi-vector index, called UEMR, for text-to-video retrieval and moment localization; its parameters are selected on the same validation split, and its zero-shot evaluation on YouCook2 is pending.
 
-Instructional video thường dài, và chỉ một phần nhỏ thời lượng của mỗi video thể hiện các bước thực hiện, nên người xem cần biết mỗi bước bắt đầu và kết thúc ở đâu. Bài báo trình bày một multi-task audio-visual model giải quyết \emph{ba nhiệm vụ} trên bộ dữ liệu HT-Step: step localization (định vị các bước của một recipe trong video), recipe recognition (nhận biết video đang làm theo recipe nào), và tạo cho mỗi segment được định vị một multimodal embedding biểu diễn nội dung của segment đó. Mô hình dựa trên các visual feature và audio feature được trích sẵn, cùng một two-stream audio-visual backbone với multi-scale temporal pyramid, nhờ đó phát hiện được cả những bước ngắn lẫn những bước dài. Multimodal embedding được học bằng knowledge distillation từ một audio-visual retrieval model \emph{bảy tỉ tham số}. Distillation dạy mô hình của chúng tôi, chỉ có 137 triệu tham số, tức nhỏ hơn khoảng năm mươi lần, tái tạo các embedding này từ chính những feature mà nó đã tính, thông qua một point-wise head và một segment-wise head. Trên validation split của các seen activity, mô hình đạt mean average precision 30,98 cho step localization, nhận biết đúng recipe cho 59,8\% số video, và đạt mean-centered cosine similarity 0,660 so với embedding của mô hình lớn.
+Instructional video thường dài, và chỉ một phần nhỏ thời lượng của mỗi video thể hiện các bước thực hiện, nên người xem cần biết mỗi bước bắt đầu và kết thúc ở đâu. Bài báo trình bày một multi-task audio-visual model giải quyết \emph{ba nhiệm vụ} trên bộ dữ liệu HT-Step: step localization (định vị các bước của một recipe trong video), recipe recognition (nhận biết video đang làm theo recipe nào), và tạo cho mỗi segment được định vị một multimodal embedding biểu diễn nội dung của segment đó. Mô hình dựa trên các visual feature và audio feature được trích sẵn, cùng một two-stream audio-visual backbone với multi-scale temporal pyramid, nhờ đó phát hiện được cả những bước ngắn lẫn những bước dài. Multimodal embedding được học bằng knowledge distillation từ một audio-visual retrieval model \emph{bảy tỉ tham số}. Distillation dạy mô hình của chúng tôi, chỉ có 137 triệu tham số, tức nhỏ hơn khoảng năm mươi lần, tái tạo các embedding này từ chính những feature mà nó đã tính, thông qua một point-wise head và một segment-wise head. Trên validation split của các seen activity, mô hình đạt mean average precision 30,98 cho step localization, nhận biết đúng recipe cho 59,8\% số video, và đạt mean-centered cosine similarity 0,660 so với embedding của mô hình lớn. Các đoạn được định vị cùng embedding đã distill còn được dùng làm một chỉ mục đa vector theo sự kiện, gọi là UEMR, cho truy hồi video và định vị khoảnh khắc; tham số của UEMR được chọn trên cùng validation split, và kết quả zero-shot trên YouCook2 đang chờ.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -56,6 +56,7 @@ Bài báo đề xuất một multi-task model theo hướng ActionFormer~\cite{a
 \item Một cách distill embedding của audio-visual retrieval model bảy tỉ tham số vào một point-wise head và một segment-wise head, với cosine loss đã trừ trung bình để khớp với thang đo.
 \item Một ridge regression trên input feature, ghép lúc inference, tăng similarity với teacher embedding từ 66,01 lên 73,86 mà không cần huấn luyện lại.
 \item Một loạt ablation và phân tích upper bound, cho biết thành phần nào có ích và giới hạn còn lại nằm ở đâu.
+\item UEMR (Mục~\ref{sec:uemr}): một chỉ mục đa vector theo sự kiện, dùng các đoạn và segment-wise head của mô hình cho truy hồi video và định vị khoảnh khắc, kèm một giao thức đánh giá không rò rỉ recipe, multi-positive, tách tập dev và benchmark, zero-shot.
 \end{itemize}
 
 \section{Công trình liên quan}
@@ -295,8 +296,142 @@ Nearest neighbor ($k = 50$) & 52,76 \\
 \subsection{Độ tin cậy của kết quả}
 Mỗi cấu hình chỉ chạy một seed. Theo ba lượt có cùng recipe head, ArtAcc dao động khoảng $\pm 1{,}5$ điểm (mỗi video là 0,2 điểm); chúng tôi coi chênh lệch mAP dưới khoảng 0,5 là nằm trong dao động. Checkpoint, hệ số $\lambda$ của ridge và các lựa chọn thiết kế đều được chọn trên val\_seen, vì test split không còn chấm được; các số vì vậy có thể lạc quan hơn một chút so với trên dữ liệu chưa thấy.
 
+\section{UEMR: truy hồi bước trong kho video}
+\label{sec:uemr}
+Phần này dùng bộ định vị ở trên cho một bài toán khác: người dùng gõ một câu mô tả một bước nấu ăn, hệ thống phải tìm video chứa bước đó trong một kho lớn và chỉ ra đoạn của bước trong video, tức video corpus moment retrieval (VCMR)~\cite{tvr}. Một vector cho cả video làm mờ từng bước và không chỉ ra được khoảnh khắc. UEMR (Unified Event-aware Multi-vector Retrieval) cắt video theo bước bằng bộ định vị, giữ nhiều vector cho mỗi video và chấm bằng MaxSim, tương tự late interaction của ColBERT~\cite{colbert}.
+
+\subsection{Chỉ mục và chấm điểm}
+\textbf{Mô hình.} Bộ định vị là UniAV ở cấu hình (a) của Bảng~\ref{tab:ablation}, huấn luyện lại một lần với teacher là Omni \texttt{best}: OmniRetriever với adapter LoRA của nhóm trên HT-Step, cũng là mô hình mã hoá câu hỏi. Nhờ vậy vector của segment-wise head nằm trong cùng không gian với câu hỏi. Mọi vector được chuẩn hoá L2.
+
+\textbf{Không rò rỉ recipe.} Recipe conditioning~\eqref{eq:artc} cần văn bản các bước của recipe, vốn lấy từ nhãn. Với truy hồi, dùng nhãn nghĩa là đọc trước đáp án. UEMR thay các bước này bằng các bước của recipe mà recipe head đoán đúng thứ nhất (top-1). Thay đổi nằm trong một adapter, code mô hình giữ nguyên.
+
+\textbf{Cắt đoạn.} R6 gồm các đoạn dự đoán có điểm không nhỏ hơn ngưỡng $\theta$; video không có đoạn nào đạt ngưỡng thì giữ đoạn điểm cao nhất. Các đoạn trùng nhau nhiều được gộp, đoạn quá ngắn được nới ra. R8 là R6 cộng các đoạn lấp: mỗi khoảng chưa được phủ, nếu dài ít nhất $L_{\min}$, được chia đều thành các cửa sổ dài xấp xỉ $L_{\mathrm{fill}}$.
+
+\textbf{Vector và điểm.} Mỗi đoạn $S_i$ của R8 có hai vector: $\mathbf{e}_i$ do Omni \texttt{best} tính từ 8 khung hình và 8 giây âm thanh của đoạn, và $\mathbf{h}_i$ do segment-wise head tính trên cùng đoạn, kể cả đoạn lấp. Câu hỏi $q$ được Omni \texttt{best} mã hoá thành $\mathbf{t}$. Ở biến thể chính,
+\begin{equation}
+\label{eq:uemr_full}
+s_i = \cos(\mathbf{t}, \mathbf{e}_i) + \beta \cos(\mathbf{t}, \mathbf{h}_i), \qquad S(q, V) = \max_{i \in V} s_i ,
+\end{equation}
+và khoảnh khắc trả về là đoạn đạt cực đại. Bảng~\ref{tab:uemr_variants} liệt kê bốn biến thể trên cùng đoạn R8. Với UEMR-Hybrid, $Z_X(s) = (s - \mu_X)/\sigma_X$, trong đó $\mu_X$ và $\sigma_X$ tính trên mọi cặp (câu hỏi, đoạn R8) của kho, không dùng nhãn.
+
+\begin{table}[t]
+\caption{Bốn biến thể UEMR trên cùng đoạn R8}
+\label{tab:uemr_variants}
+\setlength{\tabcolsep}{3pt}
+\centering
+\begin{tabular}{|p{52pt}|p{112pt}|p{58pt}|}
+\hline
+Biến thể & Điểm của đoạn $s_i$ & Omni chạy phía video \\
+\hline
+UEMR-Omni (b) & $\cos(\mathbf{t}, \mathbf{e}_i)$ & mọi đoạn \\
+UEMR-Lite (S) & $\cos(\mathbf{t}, \mathbf{h}_i)$ & không \\
+UEMR-Full (U) & $\cos(\mathbf{t}, \mathbf{e}_i) + \beta \cos(\mathbf{t}, \mathbf{h}_i)$ & mọi đoạn \\
+UEMR-Hybrid (C1) & đoạn R6: $Z_b(\cos(\mathbf{t}, \mathbf{e}_i))$; đoạn lấp: $Z_S(\cos(\mathbf{t}, \mathbf{h}_i))$ & đoạn R6 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Giao thức đánh giá}
+\textbf{Dev và benchmark.} Tập val\_seen (510 video, 2990 câu hỏi) là tập dev, nơi được chọn tham số và biến thể chính. YouCook2~\cite{youcook2} là benchmark zero-shot: không mô hình nào được huấn luyện hay chọn trên đó, và không video nào trùng ID YouTube với tập train của hai mô hình hay với tập dev.
+
+\textbf{Câu hỏi và đáp án.} Mỗi câu hỏi là câu mô tả nguyên văn của một bước có nhãn. Nhiều video có bước cùng câu chữ, nên chế độ chính là \emph{multi-positive}: một video là đáp án đúng nếu có bước cùng câu chữ với câu hỏi (sau khi viết thường, bỏ dấu câu, gộp khoảng trắng). Chế độ \emph{strict} chỉ chấp nhận video gốc.
+
+\textbf{Thang đo.} R@1 của truy hồi video. VCMR R@1: video đứng đầu đúng và đoạn trả về có tIoU từ 0,5 với một bước cùng câu chữ trong video đó. Hiệu giữa hai cấu hình đi kèm khoảng tin cậy 95\% bằng paired bootstrap theo video (1000 lần, seed 0)~\cite{bootstrap}.
+
+\textbf{Cách cắt để so sánh.} R0: một vector cho cả video. R1: trung bình các vector R6. R2: cắt đều độ dài $L$, với $L$ chọn để tổng số đoạn bằng R8. R3: cắt đều thành đúng số đoạn R6 của video. R7: đoạn GT (cận trên). R2 và R3 tách tác dụng của ranh giới khỏi tác dụng của số đoạn.
+
+\textbf{Chọn trước, chấm sau.} Trên dev, mọi cấu hình đã chấm đều được ghi lại; tham số và biến thể chính được chọn bằng luật viết trước rồi khoá trong một file cấu hình có mã băm. Trên benchmark, protocol và tiêu chí thắng thua (Bảng~\ref{tab:uemr_bench}) được khoá trước khi chấm; một tiêu chí đạt khi cận dưới của khoảng tin cậy lớn hơn 0.
+
+\subsection{Kết quả trên tập dev}
+Các lựa chọn theo luật viết trước:
+\begin{itemize}
+\item $\theta = 0{,}402$: số đoạn R6 trung bình mỗi video (5,888) gần nhất với số bước trung bình mỗi video của HT-Step train (5,910).
+\item $(L_{\min}, L_{\mathrm{fill}}) = (5, 10)$ giây: R@1 của UEMR-Lite trên R8 cao nhất trong lưới $\{3, 5\} \times \{8, 10, 15\}$ (58,56); từ đó $L$ của R2 là 11,89 giây.
+\item $\beta = 1{,}0$: R@1 của UEMR-Full trên R8 cao nhất trong lưới $\{0;\,0{,}1;\,0{,}2;\,0{,}3;\,0{,}5;\,1{,}0\}$, lần lượt 59,60; 61,44; 61,30; 62,44; 63,21; 63,34. Giá trị này nằm ở biên trên của lưới.
+\item Biến thể chính là UEMR-Full, vì cận dưới khoảng tin cậy của (U) $-$ (b) trên R8 lớn hơn 0 (Bảng~\ref{tab:uemr_pairs}).
+\end{itemize}
+
+\begin{table}[t]
+\caption{UEMR trên tập dev, multi-positive: R@1 của ba cột và VCMR R@1 của cột (b)}
+\label{tab:uemr_dev}
+\setlength{\tabcolsep}{3pt}
+\centering
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+Cắt & vec/video & (b) & (S) & (U) & VCMR (b) \\
+\hline
+R0 & 1,0 & 49,00 & 50,87 & 55,08 & -- \\
+R1 & 1,0 & 58,13 & 55,05 & 58,86 & -- \\
+R2 & 33,2 & 57,83 & 56,52 & 62,04 & 10,60 \\
+R3 & 5,9 & 53,38 & 55,89 & 57,99 & 4,41 \\
+R6 & 5,9 & 57,49 & 58,39 & 61,57 & 24,48 \\
+R8 & 33,2 & 59,60 & 58,56 & \textbf{63,34} & 15,92 \\
+\hline
+R7 (GT) & 5,9 & 65,05 & 66,62 & 70,54 & 56,05 \\
+\hline
+\multicolumn{6}{p{225pt}}{Số dev chỉ dùng để chọn tham số và lạc quan, vì checkpoint của hai mô hình và mọi tham số của UEMR đều được chọn trên tập này. C1 trên R8 đạt 58,90.}
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\caption{UEMR trên tập dev: hiệu R@1 multi-positive và khoảng tin cậy 95\%}
+\label{tab:uemr_pairs}
+\setlength{\tabcolsep}{3pt}
+\centering
+\begin{tabular}{|l|c|c|}
+\hline
+Cặp (cột (b) trừ khi ghi khác) & A $-$ B & CI 95\% \\
+\hline
+R8 $-$ R0 & +10,60 & [+7,24; +14,08] \\
+R8 $-$ R3 & +6,22 & [+3,74; +8,73] \\
+R8 $-$ R2 & +1,77 & [$-$0,53; +4,02] \\
+(U) $-$ (b), trên R8 & +3,75 & [+1,53; +5,98] \\
+(S) trên R8 $-$ (b) trên R0 & +9,57 & [+6,13; +13,08] \\
+C1 trên R8 $-$ (b) trên R6 & +1,40 & [$-$0,78; +3,70] \\
+VCMR R@1: R6 $-$ R3 & +20,07 & [+17,55; +22,59] \\
+\hline
+\end{tabular}
+\end{table}
+
+Bảng~\ref{tab:uemr_dev} và Bảng~\ref{tab:uemr_pairs} cho thấy trên dev:
+\begin{itemize}
+\item Cắt theo sự kiện hơn một vector cho mỗi video (R8 $-$ R0) và hơn cắt đều cùng số đoạn (R8 $-$ R3).
+\item R8 chưa hơn R2 có ý nghĩa thống kê, nên trên dev chưa tách được lợi ích của ranh giới khỏi lợi ích của việc có nhiều đoạn hơn. Ranh giới giúp rõ ở định vị khoảnh khắc (VCMR R6 $-$ R3).
+\item Cộng cột (S) vào cột (b) tăng R@1 ở mọi cách cắt trong Bảng~\ref{tab:uemr_dev}. UEMR-Lite, không chạy Omni phía video, cũng hơn một vector Omni cho mỗi video.
+\end{itemize}
+
+\textbf{Phân tích.} Với 1687 câu hỏi có bước bị R6 bỏ sót (tIoU nhỏ hơn 0,3), R8 $-$ R6 là +5,69 [+2,36; +8,84]; với 1303 câu hỏi có bước được R6 bắt, R6 $-$ R3 là +7,52 [+3,87; +11,14]. Đoạn lấp và ranh giới vì vậy bổ trợ nhau. Trên R8, chỉ cột (b) đúng ở hạng 1 với 459 câu, chỉ cột (S) đúng với 428 câu, và hệ số Spearman giữa thứ hạng của hai cột là 0,587; giả thuyết của chúng tôi là sự bổ trợ này giải thích vì sao (U) hơn từng cột, nhưng chưa có phép kiểm nhân quả. Thay recipe đoán bằng một recipe ngẫu nhiên làm cột (S) trên R8 giảm 22,58 [19,71; 25,57] điểm R@1: vector của segment-wise head mang thông tin về recipe, và cũng nhạy với việc đoán sai recipe.
+
+\subsection{Benchmark YouCook2 (zero-shot)}
+Kho benchmark gồm 635 trong số 1500 video YouCook2 có annotation và có mp4. Việc trích feature dừng giữa chừng; các video được giữ là các video đã trích xong, theo thứ tự tên ID, không dựa vào nhãn hay kết quả. Câu hỏi chỉ lấy từ 635 video này, và mọi tham số giữ nguyên như đã khoá trên dev. Trên kho này, recall của bước GT ở tIoU 0,3 / 0,5 / 0,7 là 37,99 / 24,86 / 13,67, với trung bình 5,55 đoạn R6 mỗi video so với 7,82 bước GT.
+
+\begin{table}[t]
+\caption{UEMR trên YouCook2, multi-positive, R@1: tiêu chí viết trước}
+\label{tab:uemr_bench}
+\setlength{\tabcolsep}{3pt}
+\centering
+\begin{tabular}{|l|p{78pt}|c|c|}
+\hline
+ & Cặp & A $-$ B & CI 95\% \\
+\hline
+K1 & UEMR $-$ R0 (b) & \multicolumn{2}{c|}{[CHỜ KẾT QUẢ BENCHMARK]} \\
+K2 & UEMR $-$ R3, cùng cột & \multicolumn{2}{c|}{[CHỜ KẾT QUẢ BENCHMARK]} \\
+K3 & VCMR: R6 $-$ R3 (b) & \multicolumn{2}{c|}{[CHỜ KẾT QUẢ BENCHMARK]} \\
+K4 & UEMR-Lite R8 $-$ R0 (b) & \multicolumn{2}{c|}{[CHỜ KẾT QUẢ BENCHMARK]} \\
+K5 & (U) $-$ (b), trên R8 & \multicolumn{2}{c|}{[CHỜ KẾT QUẢ BENCHMARK]} \\
+\hline
+\multicolumn{4}{p{225pt}}{UEMR là biến thể chính đã khoá (UEMR-Full, $\beta = 1{,}0$) trên R8. Một tiêu chí đạt khi cận dưới CI lớn hơn 0.}
+\end{tabular}
+\end{table}
+
+[CHỜ KẾT QUẢ BENCHMARK]: R@1 và VCMR R@1 của các cách cắt và các cột trên kho 635 video, và kết luận theo K1, K2.
+
+\textbf{Hạn chế.} Số dev lạc quan và $\beta$ nằm ở biên của lưới. Trên dev, R8 chưa hơn R2 có ý nghĩa thống kê. Lúc huấn luyện, bộ định vị luôn được cho recipe đúng, còn lúc truy hồi nó phải tự đoán; recipe đoán sai trên miền khác có thể làm cột (S) yếu đi (giả thuyết, chưa đo). Kho benchmark chỉ gồm 635 trong 1500 video, mỗi cấu hình chạy một seed, và dữ liệu pretrain của mô hình truy hồi gốc cũng lấy từ YouTube nên không loại trừ hết khả năng trùng video với benchmark.
+
 \section{Kết luận}
 Bài báo trình bày một mô hình multi-task audio-visual cho instructional video nấu ăn, thực hiện đồng thời step localization, recipe recognition và tạo multimodal embedding cho mỗi đoạn. Trên val\_seen của HT-Step, mô hình đạt mAP 30,98, cao hơn hẳn các phương pháp training-free gần đây và xấp xỉ các mô hình supervised của bài báo gốc. Với multimodal embedding, việc ghép một ridge regression dạng đóng lúc inference tăng OmniCosC gần tám điểm mà không cần huấn luyện lại, và phân tích upper bound cho thấy giới hạn còn lại nằm chủ yếu ở input feature. Hướng tiếp theo gồm dùng frame feature và lời nói giàu hơn, đánh giá trên tập dữ liệu khác, và chạy nhiều seed để có khoảng tin cậy.
+
+Ở phần ứng dụng, UEMR dùng các đoạn và segment-wise head của mô hình làm chỉ mục đa vector cho truy hồi video và định vị khoảnh khắc. Trên tập dev, các lựa chọn đã khoá là $\theta = 0{,}402$, $(L_{\min}, L_{\mathrm{fill}}) = (5, 10)$ giây và UEMR-Full với $\beta = 1{,}0$. [CHỜ KẾT QUẢ BENCHMARK]: kết luận về hiệu quả zero-shot trên YouCook2 chỉ được viết khi tiêu chí K1, K2 đạt.
 
 \section*{Lời cảm ơn}
 (Điền lời cảm ơn nếu có.)
@@ -323,6 +458,10 @@ Bài báo trình bày một mô hình multi-task audio-visual cho instructional 
 \bibitem{clip4clip} H. Luo, L. Ji, M. Zhong, Y. Chen, W. Lei, N. Duan, and T. Li, ``CLIP4Clip: An empirical study of CLIP for end to end video clip retrieval and captioning,'' \textit{Neurocomputing}, vol. 508, pp. 293--304, 2022.
 \bibitem{rkd} W. Park, D. Kim, Y. Lu, and M. Cho, ``Relational knowledge distillation,'' in \textit{Proc. CVPR}, 2019.
 \bibitem{moco} K. He, H. Fan, Y. Wu, S. Xie, and R. Girshick, ``Momentum contrast for unsupervised visual representation learning,'' in \textit{Proc. CVPR}, 2020.
+\bibitem{tvr} J. Lei, L. Yu, T. L. Berg, and M. Bansal, ``TVR: A large-scale dataset for video-subtitle moment retrieval,'' in \textit{Proc. ECCV}, 2020, pp. 447--463.
+\bibitem{colbert} O. Khattab and M. Zaharia, ``ColBERT: Efficient and effective passage search via contextualized late interaction over BERT,'' in \textit{Proc. SIGIR}, 2020, pp. 39--48.
+\bibitem{youcook2} L. Zhou, C. Xu, and J. J. Corso, ``Towards automatic learning of procedures from web instructional videos,'' in \textit{Proc. AAAI}, 2018, pp. 7590--7598.
+\bibitem{bootstrap} B. Efron and R. J. Tibshirani, \textit{An Introduction to the Bootstrap}. New York, NY, USA: Chapman \& Hall, 1993.
 \end{thebibliography}
 
 \end{document}
