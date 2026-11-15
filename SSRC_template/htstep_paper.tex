@@ -130,7 +130,7 @@ Lúc inference, điểm của một đoạn là tích của xác suất sự ki�
 \begin{figure*}[t]
 \centering
 \resizebox{\textwidth}{!}{\input{fig_heads}}
-\caption{Cấu trúc bên trong của các head chính. \emph{Event head} và \emph{boundary head} là hai localization head, chạy trên feature $\mathbf{F}'_l$ của mọi tầng với trọng số dùng chung. Mỗi head có hai lớp Conv1D (kernel 3) kèm LayerNorm và ReLU; event head kết thúc bằng một Conv1D cho xác suất $p$ rằng điểm đó nằm trong một bước, còn boundary head tách thành hai nhánh: một nhánh cho khoảng cách $(d_s, d_e)$ từ điểm đó tới hai biên của bước (nhân với hệ số $s_l$ học được của từng tầng), một nhánh cho điểm chất lượng $q$ ước lượng IoU giữa đoạn dự đoán và đoạn thật. \emph{Point-wise head} và \emph{segment-wise head} (màu tím) được distill từ OmniRetriever. Point-wise head cho mỗi điểm một embedding 3584 chiều, qua một Conv1D cộng với nhánh skip $1{\times}1$ từ $\mathbf{F}'_l$. Segment-wise head biết trước thời điểm đầu và cuối của đoạn, gom mọi điểm của sáu tầng nằm trong đoạn (cộng embedding của tầng), rồi tạo một embedding cho cả đoạn bằng attention pooling với 8 query và MLP, song song với một nhánh tuyến tính trên trung bình các điểm. Cả hai head chỉ dự đoán phần lệch $\mathbf{r}$ quanh trung bình $\boldsymbol{\mu}$ của các teacher embedding, rồi chuẩn hoá L2. Chữ đỏ in nghiêng là loss của mỗi đầu ra.}
+\caption{Các head chính của mô hình. \emph{Event head} cho biết mỗi thời điểm có nằm trong một bước hay không. \emph{Boundary head} cho biết bước đó bắt đầu và kết thúc ở đâu, kèm một điểm chất lượng dùng để xếp hạng các đoạn. \emph{Point-wise head} và \emph{segment-wise head} (màu tím) tạo multimodal embedding cho mỗi thời điểm và cho cả đoạn, được distill từ OmniRetriever. Chữ đỏ in nghiêng là loss của mỗi đầu ra.}
 \label{fig:heads}
 \end{figure*}
 
@@ -152,7 +152,7 @@ Teacher embedding $\mathbf{t}$ (đã chuẩn hoá L2) là vector mà OmniRetriev
 \item \emph{Point-wise head}: một nhánh của embedding head, cho mỗi điểm nằm trong một đoạn GT một vector 3584 chiều.
 \item \emph{Segment-wise head}: biết trước thời điểm đầu và cuối của đoạn, lấy mọi điểm của sáu tầng nằm trong đoạn, cộng embedding của tầng, rồi gộp bằng attention pooling với 8 truy vấn và một MLP ẩn 4096 chiều. Một nhánh tuyến tính trên trung bình các điểm trong đoạn được cộng song song.
 \end{itemize}
-Phần mà mọi teacher embedding cùng có rất lớn: chỉ cần dự đoán trung bình $\boldsymbol{\mu}$ của các teacher embedding trên tập huấn luyện đã được cosine khoảng 0,80. Vì vậy cả hai head dự đoán phần lệch quanh $\boldsymbol{\mu}$:
+Các teacher embedding rất giống nhau: vector trung bình $\boldsymbol{\mu}$ của chúng trên tập huấn luyện đã có cosine khoảng 0,80 với teacher embedding của một đoạn bất kỳ. Nói cách khác, phần lớn mỗi teacher embedding là phần chung $\boldsymbol{\mu}$, còn thông tin riêng của từng đoạn chỉ nằm ở phần lệch nhỏ quanh $\boldsymbol{\mu}$. Vì vậy, thay vì dự đoán cả vector, hai head lấy sẵn $\boldsymbol{\mu}$ và chỉ dự đoán phần lệch đó:
 \begin{equation}
 \label{eq:dev}
 \hat{\mathbf{s}} = \frac{\boldsymbol{\mu} + \alpha\,\mathbf{r}}{\lVert \boldsymbol{\mu} + \alpha\,\mathbf{r} \rVert},
