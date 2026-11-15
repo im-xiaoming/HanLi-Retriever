@@ -63,6 +63,7 @@ cfg = {
             'omni_temperature': 0.05,      # softmax temperature of the omni KL distillation (0.02 / 0.1: worse)
             # InfoNCE student -> teachers (own teacher = positive, the other teachers of the batch and of a queue of
             # earlier batches = negatives): trains what OmniR@1 measures
+            'use_omni_nce': True,          # False: no omni InfoNCE at all (point and span heads), no queue
             'loss_weight_omni_nce': 0.5,
             'omni_nce_temperature': 0.05,
             'omni_queue_size': 8192,       # teachers of earlier batches kept as negatives (0 = batch only)

@@ -1,0 +1,75 @@
+% Inside the main heads (libs/modeling/heads.py): localization (event, boundary) and distillation (point-wise, segment-wise)
+\begin{tikzpicture}[
+  font=\scriptsize,
+  layer/.style={draw, rounded corners=1.5pt, fill=gray!10, minimum width=2.9cm, minimum height=0.5cm, align=center, inner sep=1.5pt},
+  half/.style={layer, minimum width=1.38cm},
+  inp/.style={layer, fill=blue!10},
+  title/.style={font=\footnotesize\bfseries, align=center},
+  outp/.style={layer, fill=green!12},
+  omni/.style={layer, fill=violet!12},
+  loss/.style={font=\scriptsize\itshape, text=red!60!black, align=center},
+  arr/.style={-{Stealth[length=3pt]}, semithick},
+]
+\def\ya{0}      % title
+\def\yb{-0.65}  % input
+\def\yc{-1.45}
+\def\yd{-2.25}
+\def\ye{-3.05}
+\def\yf{-3.85}
+
+% ---------------- Event head ----------------
+\begin{scope}[xshift=0cm]
+\node[title] at (0,\ya) {Event head};
+\node[inp] (a1) at (0,\yb) {$\mathbf{F}'_l$, all levels};
+\node[layer] (a2) at (0,\yc) {(Conv1D $k{=}3$ + LN\\+ ReLU) $\times 2$};
+\node[layer] (a3) at (0,\yd) {Conv1D $\rightarrow 1$};
+\node[outp] (a4) at (0,\ye) {event probability $p$};
+\draw[arr] (a1)--(a2); \draw[arr] (a2)--(a3); \draw[arr] (a3)--(a4);
+\node[loss] at (0,\yf) {focal loss};
+\end{scope}
+
+% ---------------- Boundary head ----------------
+\begin{scope}[xshift=3.5cm]
+\node[title] at (0,\ya) {Boundary head};
+\node[inp] (b1) at (0,\yb) {$\mathbf{F}'_l$, all levels};
+\node[layer] (b2) at (0,\yc) {(Conv1D $k{=}3$ + LN\\+ ReLU) $\times 2$};
+\node[half] (b3) at (-0.76,\yd) {Conv1D $\rightarrow 2$\\$\times s_l$, ReLU};
+\node[half] (b4) at ( 0.76,\yd) {Conv1D\\$\rightarrow 1$};
+\node[outp, minimum width=1.38cm] (b5) at (-0.76,\ye) {$(d_s, d_e)$};
+\node[outp, minimum width=1.38cm] (b6) at ( 0.76,\ye) {IoU quality $q$};
+\draw[arr] (b1)--(b2); \draw[arr] (b2.south -| b3)--(b3); \draw[arr] (b2.south -| b4)--(b4);
+\draw[arr] (b3)--(b5); \draw[arr] (b4)--(b6);
+\node[loss] at (-0.76,\yf) {DIoU}; \node[loss] at (0.76,\yf) {BCE};
+\end{scope}
+
+% ---------------- Point-wise head ----------------
+\begin{scope}[xshift=7.0cm]
+\node[title] at (0,\ya) {Point-wise head};
+\node[inp] (c1) at (0,\yb) {$\mathbf{F}'_l$, all levels};
+\node[layer] (c2) at (0,\yc) {(Conv1D $k{=}3$ + LN\\+ ReLU) $\times 2$};
+\node[omni] (c3) at (0,\yd) {Conv1D $\rightarrow 3584$\\+ $1{\times}1$ skip from $\mathbf{F}'_l$};
+\node[omni] (c4) at (0,\ye) {$\boldsymbol{\mu} + \alpha\mathbf{r}$, L2 normalize};
+\node[outp, fill=violet!20] (c5) at (0,\yf) {embedding of every point};
+\draw[arr] (c1)--(c2); \draw[arr] (c2)--(c3); \draw[arr] (c3)--(c4); \draw[arr] (c4)--(c5);
+\end{scope}
+
+% ---------------- Segment-wise head ----------------
+\begin{scope}[xshift=10.5cm]
+\node[title] at (0,\ya) {Segment-wise head};
+\node[inp] (e1) at (0,\yb) {points of 6 levels in\\$(t_s, t_e)$ + level emb.};
+\node[half, fill=violet!12] (e2) at (-0.76,\yc) {attention\\pooling (8 q.)};
+\node[half, fill=violet!12] (e3) at ( 0.76,\yc) {Linear of\\seg. mean};
+\node[half, fill=violet!12] (e4) at (-0.76,\yd) {MLP\\hidden 4096};
+\node[omni] (e5) at (0,\ye) {sum, $\boldsymbol{\mu} + \alpha\mathbf{r}$,\\L2 normalize};
+\node[outp, fill=violet!20] (e6) at (0,\yf) {embedding of the segment};
+\draw[arr] (e1.south -| e2)--(e2); \draw[arr] (e1.south -| e3)--(e3); \draw[arr] (e2)--(e4);
+\draw[arr] (e4.south)--(e4.south |- e5.north); \draw[arr] (e3.south)--(e3.south |- e5.north);
+\draw[arr] (e5)--(e6);
+\end{scope}
+
+% shared distillation loss of the two embedding heads
+\node[loss] at (8.75,\yf-0.6) {distillation from OmniRetriever: KL + cos + InfoNCE};
+
+% separators
+\foreach \x in {1.75, 5.25, 8.75} { \draw[gray!40, dashed] (\x, 0.35) -- (\x, -4.1); }
+\end{tikzpicture}

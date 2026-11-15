@@ -141,6 +141,7 @@ def omni_distill_loss(
     bank=None,     # (Q, 3584) teachers of earlier batches (TeacherQueue), extra negatives of the nce, or None
     nce_temperature=0.05,
     center=None,   # (3584,) mean of the train teacher vectors: the cos loss compares the vectors minus it
+    use_nce=True,  # False: the nce is not computed (returned as 0)
 ):
     if len(students) == 0:   # no segment with a teacher in this batch (very rare): no loss
         zero = students.sum() * 0.0
@@ -155,6 +156,9 @@ def omni_distill_loss(
 
     c = 0.0 if center is None else center.to(students.dtype)
     cos_loss = (1.0 - F.cosine_similarity(students - c, own_teachers - c, dim=-1)).mean()
+
+    if not use_nce:
+        return {'kd': kd_loss, 'cos': cos_loss, 'nce': students.sum() * 0.0}
 
     cands = teachers if bank is None else torch.cat((teachers, bank.to(teachers.dtype)))   # (M + Q, 3584)
     logits = students @ cands.t() / nce_temperature                                  # (N, M + Q)
@@ -178,6 +182,7 @@ def omni_losses(
     queue=None,      # TeacherQueue: teachers of earlier batches, extra negatives of the nce; the batch is added after
     nce_temperature=0.05,
     center=None,     # (3584,) mean of the train teacher vectors, for the centred cos loss
+    use_nce=True,    # False: no InfoNCE for either head, and the queue is neither read nor filled
 ):
     dev = omni_em.device
 
@@ -194,8 +199,11 @@ def omni_losses(
     target = teacher_row[video, segment]                # (N',) row of its teacher, -1 = no teacher
     keep = target >= 0
     students = omni_em[video[keep], point[keep]]        # (N, 3584)
+    if not use_nce:
+        queue = None
     bank = None if queue is None else queue.get()
-    point_losses = omni_distill_loss(students, teachers, target[keep], temperature, bank, nce_temperature, center)
+    point_losses = omni_distill_loss(students, teachers, target[keep], temperature, bank, nce_temperature, center,
+                                   use_nce)
 
     # 3. span head
     span_segs, span_target = [], []
@@ -207,7 +215,7 @@ def omni_losses(
     segs, real = pad_segments(span_segs)                # (B, n, 2), (B, n): the whole batch in one call
     span_students = span(feats, lens, segs)[real]       # (N, 3584), in the order of span_target
     span_losses = omni_distill_loss(span_students, teachers, torch.cat(span_target), temperature,
-                                    bank, nce_temperature, center)
+                                    bank, nce_temperature, center, use_nce)
     if queue is not None:
         queue.push(teachers)
     return point_losses, span_losses

@@ -97,6 +97,7 @@ Mỗi run chỉ chạy một seed. Theo các run có cùng article head:
 | run11 | A100, 32 | Quay về cách khởi tạo cũ (bỏ Xavier). |
 | run12 | A100, 32 | `trunc_thresh` 0.25, `crop_ratio` [0.95, 1.0]. |
 | run13 | A100, 32 | `max_seq_len` 320; ghép ridge regression với omni head lúc suy luận. |
+| run14 | A100, 32 | `max_seq_len` về lại 256 (cấu hình của run12), giữ ridge. |
 
 ## Kết quả
 
@@ -115,8 +116,9 @@ Mỗi cột là giá trị tốt nhất trên mọi epoch, nên các cột có t
 | run11 | 12 (e10) | 30.44 | 35.89 | 34.67 | **70.76** | 59.80 | 65.94 | 68.86 |
 | run12 | 13 (e11) | **30.98** | **36.32** | 34.91 | 70.06 | 60.00 | 66.01 | 69.50 |
 | run13 | 11 (e11) | 30.25 | 36.05 | 34.86 | 68.66 | **61.57** | **73.98*** | **70.74*** |
+| run14 | 13 (e11) | **30.98** | **36.32** | 34.91 | 70.06 | 60.00 | 73.92* | 70.54* |
 
-\* Run13 ghép ridge regression lúc suy luận. Riêng hai omni head của run13 đạt OmniCosC 66.14 và OmniR@1 69.20; riêng ridge đạt 69.65 và 60.10. Ghép ridge vào checkpoint run11 (không train lại) cũng nâng OmniCosC từ 65.81 lên 73.58 và OmniR@1 từ 67.63 lên 68.96.
+\* Run13 và run14 ghép ridge regression lúc suy luận. Riêng hai omni head của run13 đạt OmniCosC 66.14 và OmniR@1 69.20; riêng ridge đạt 69.65 và 60.10. Ghép ridge vào checkpoint run11 (không train lại) cũng nâng OmniCosC từ 65.81 lên 73.58 và OmniR@1 từ 67.63 lên 68.96.
 
 Số liệu đầy đủ của mỗi run nằm trong `experiments/results_20261115.csv`, gồm cả commit code, epoch của checkpoint và đường dẫn log.
 
@@ -124,8 +126,8 @@ Số liệu đầy đủ của mỗi run nằm trong `experiments/results_202611
 
 | | Run 1–5 (RTX 3060) | Run 6–13 (A100) |
 |---|---|---|
-| Checkpoint | `ckpt/runN/model_best.pth.tar` (mAP tốt nhất), `ckpt/runN/model_best_article.pth.tar` (ArtAcc tốt nhất) | như cột bên, tải về từ Colab |
-| Log từng epoch | `experiments/runs/DESKTOP-8PSQBN9-*.json` | `experiments/colab_logs/runN.log` |
+| Checkpoint | `ckpt/runN/model_best.pth.tar` (mAP tốt nhất), `ckpt/runN/model_best_article.pth.tar` (ArtAcc tốt nhất) | như cột bên, tải về từ Colab (run6–run14) |
+| Log từng epoch | `experiments/runs/DESKTOP-8PSQBN9-*.json` | `experiments/colab_logs/runN.log` (run6–run14) |
 
 Checkpoint chỉ được ghi khi thang đo tăng ít nhất 0.3, nên epoch của checkpoint có thể khác epoch có số cao nhất trong bảng (xem cột `ckpt_epoch` trong file CSV).
 

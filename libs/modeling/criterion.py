@@ -58,7 +58,7 @@ def event_losses(
     # <<<<<<<<<<<<<<<< Omni >>>>>>>>>>>>>>
     omni_point, omni_span = omni_losses(model.omni_span, video_list, pos, gt_cls, omni_em, feats, lens,
                                         w['omni_temperature'], model.omni_queue, w['omni_nce_temperature'],
-                                        model.omni_teacher_mean)
+                                        model.omni_teacher_mean, w.get('use_omni_nce', True))
 
     # =========================================== Span Loss =========================================
     # every GT segment of the batch in one call: (B, M, 2) padded segments, (B, M) real ones
@@ -76,7 +76,8 @@ def event_losses(
              + w['loss_weight_emb'] * emb_loss
              + w['loss_weight_omni_kd'] * omni_point['kd'] + w['loss_weight_omni_cos'] * omni_point['cos']
              + w['loss_weight_omni_kd'] * omni_span['kd'] + w['loss_weight_omni_cos'] * omni_span['cos']
-             + w['loss_weight_omni_nce'] * (omni_point['nce'] + omni_span['nce'])
+             + (w['loss_weight_omni_nce'] * (omni_point['nce'] + omni_span['nce'])
+                if w.get('use_omni_nce', True) else 0.0)
              + w['loss_weight_span'] * span_loss
              + w['loss_weight_article'] * art_loss)
 
