@@ -15,6 +15,7 @@
 T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \markboth{STUDENT SCIENTIFIC RESEARCH COMMUNICATION, Volume II, 2026}
 {Nguyễn Ngọc Minh \MakeLowercase{\textit{et al.}}: Định Vị Các Bước Recipe Trong Instructional Video Dài}
+\newsavebox{\sotabox}
 \begin{document}
 \title{Định Vị Các Bước Recipe Trong Instructional Video Dài Bằng Audio-Visual Multi-Task Learning Và LLM Distillation}
 \author{\begin{tabular}{c}
@@ -237,9 +238,10 @@ Bảng~\ref{tab:sota} so mAP với các công trình khác. Cột trung bình c�
 \caption{So sánh mAP article grounding với các công trình khác}
 \label{tab:sota}
 \centering
+\sbox{\sotabox}{%
 \begin{tabular}{|l|l|l|c|c|c|c|}
 \hline
-Phương pháp & Cách học & Tập chấm & @0,3 & @0,5 & @0,7 & TB 0,3--0,7 \\
+Phương pháp & Cách học & Tập chấm$^{*}$ & @0,3 & @0,5 & @0,7 & TB 0,3--0,7 \\
 \hline
 ActionFormer~\cite{htstep} & supervised & test seen & -- & -- & -- & 25,4 \\
 ActionFormer-T~\cite{htstep} & supervised & test seen & 36,9 & 26,5 & 15,3 & 26,3 \\
@@ -253,7 +255,9 @@ HSD, Qwen3-VL-8B~\cite{hsd} & training-free & val\_seen (600) & 26,45 & 13,78 & 
 \textbf{Của chúng tôi} & supervised & val\_seen (600) & 37,72 & 27,41 & 14,42 & 26,73 \\
 \textbf{Của chúng tôi} & supervised & val\_seen (510) & \textbf{43,58} & \textbf{31,71} & 16,92 & \textbf{30,99} \\
 \hline
-\end{tabular}
+\end{tabular}}
+\usebox{\sotabox}\\[2pt]
+\parbox{\wd\sotabox}{\footnotesize $^{*}$val\_seen (600): chấm bằng mã chấm chính thức trên cả 600 video, 90 video không tải được bị tính là bỏ sót toàn bộ, cùng cách chấm với các công trình khác. val\_seen (510): chỉ chấm trên 510 video có feature.}
 \end{table*}
 
 \subsection{Ablation study}
