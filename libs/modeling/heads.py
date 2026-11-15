@@ -111,20 +111,32 @@ class EmbedHead(nn.Module):
         return F.normalize(self.clip_proj(cap), dim=-1) # (N, 512)
 
 
-def segment_masks(
-    length,   # real level-0 steps of the video
-    segs,     # (N, 2) segments (start, end), in level-0 steps
-    T,        # level-0 steps of the padded video (T)
+def pad_segments(
+    segs,   # [B] (N_b, 2) segments of every video (N_b may be 0)
 ):
-    """
-    Create mask with shape: (N, T).
-    """
-    lo = segs[:, 0].floor().clamp(min=0, max=length - 1).long()             # (N,) first step
-    hi = segs[:, 1].ceil().long() + 1
-    hi = torch.maximum(hi.clamp(max=length), lo + 1)                        # (N,) one past the last step
+    """Segments of every video in one tensor, for the batched span heads (one call for the whole batch instead
+    of one per video). Returns (B, N, 2) segments, padded with [0, 0], and (B, N) bool, True = a real segment."""
+    n = max(max((len(s) for s in segs), default=0), 1)
+    out = segs[0].new_zeros(len(segs), n, 2)
+    valid = torch.zeros(len(segs), n, dtype=torch.bool, device=segs[0].device)
+    for b, s in enumerate(segs):
+        out[b, :len(s)] = s
+        valid[b, :len(s)] = True
+    return out, valid
+
+
+def segment_masks(
+    length,   # (B,) real steps of every video
+    segs,     # (B, N, 2) segments (start, end), in steps
+    T,        # steps of the padded videos
+):
+    """(B, N, T) bool: True at the steps of every segment. A segment covers at least one step."""
+    length = length.long()[:, None]                                         # (B, 1)
+    lo = torch.minimum(segs[..., 0].floor().long().clamp(min=0), length - 1)  # (B, N) first step
+    hi = torch.minimum(segs[..., 1].ceil().long() + 1, length)
+    hi = torch.maximum(hi, lo + 1)                                          # (B, N) one past the last step
     t = torch.arange(T, device=segs.device)                                 # (T,)
-    #           (1, T)      (N, 1)         (1, T)       (N, 1)
-    return (t[None, :] >= lo[:, None]) & (t[None, :] < hi[:, None]) # (N, T)
+    return (t >= lo[..., None]) & (t < hi[..., None])                       # (B, N, T)
 
 
 class AttentionPool(nn.Module):
@@ -155,23 +167,28 @@ class AttentionPool(nn.Module):
 
     def forward(
         self,
-        x,     # (N, T, dim) N sets of T vectors
-        mask,  # (N, T) bool, True = this vector belongs to the set (at least one True per row)
+        x,     # (B, T, dim) B videos of T vectors
+        mask,  # (B, N, T) bool: N sets per video, True = this vector belongs to the set
     ):
+        """(B, N, out_dim): one vector per set. The sets of a video share its vectors, so the scores are computed
+        once per video and only the mask differs between its sets. A set with no vector (padding) gets the
+        mean of the whole video, to stay finite; it is meant to be dropped by the caller."""
+        B, N, T = mask.shape
         dim = x.shape[-1]
-        keys = x                                                      # (N, T, dim)
-        values = x                                                    # (N, T, dim)
+        keys = x                                                      # (B, T, dim)
+        values = x                                                    # (B, T, dim)
+        mask = mask | ~mask.any(-1, keepdim=True)                     # empty (padding) sets: every vector
 
         # score of query q for input t: dot(query q, key t) / sqrt(dim), as in standard attention
-        #                 (Q, dim)       (N, dim, T)
-        scores = self.queries @ keys.transpose(1, 2) / dim ** 0.5     # (N, Q, T)
-        scores = scores.masked_fill(~mask[:, None, :], float('-inf')) # inputs outside the set get weight 0
-        weights = scores.softmax(dim=-1)                              # (N, Q, T), sums to 1 over T
+        #                 (Q, dim)       (B, dim, T)
+        scores = self.queries @ keys.transpose(1, 2) / dim ** 0.5     # (B, Q, T)
+        scores = scores[:, None].masked_fill(~mask[:, :, None], float('-inf'))   # (B, N, Q, T) outside the set: 0
+        weights = scores.softmax(dim=-1)                              # (B, N, Q, T), sums to 1 over T
 
         # every query: weighted mean of the inputs
-        #          (N, Q, T) @ (N, T, dim)
-        pooled = weights @ values                                     # (N, Q, dim)
-        return self.out(pooled.flatten(1))                            # (N, Q * dim) -> (N, out_dim)
+        #          (B, N * Q, T) @ (B, T, dim)
+        pooled = weights.flatten(1, 2) @ values                       # (B, N * Q, dim)
+        return self.out(pooled.reshape(B, N, len(self.queries) * dim))   # (B, N, Q * dim) -> (B, N, out_dim)
 
 
 class OmniSpanHead(nn.Module):
@@ -197,16 +214,16 @@ class OmniSpanHead(nn.Module):
 
     def forward(
         self,
-        feats,    # per level (D, T_l) features of one video
-        lengths,  # per level, real steps of the video
-        segs,     # (N, 2) segments (start, end) in level-0 steps
+        feats,    # per level (B, D, T_l) pyramid features
+        lens,     # (B, L) real steps of every video at every level
+        segs,     # (B, N, 2) segments (start, end) in level-0 steps (pad_segments)
     ):
         xs, masks = [], []
-        for l, (f, n, s) in enumerate(zip(feats, lengths, self.strides)):
-            xs.append(f.t() + self.level_emb[l])                                  # (T_l, D)
-            masks.append(segment_masks(int(n), segs / s, f.shape[1]))             # (N, T_l)
-        x = torch.cat(xs)[None].expand(len(segs), -1, -1)       # (N, P, D) every level, the same for every segment
-        return F.normalize(self.pool(x, torch.cat(masks, dim=1)), dim=-1)          # (N, out_dim)
+        for l, (f, s) in enumerate(zip(feats, self.strides)):
+            xs.append(f.transpose(1, 2) + self.level_emb[l])                      # (B, T_l, D)
+            masks.append(segment_masks(lens[:, l], segs / s, f.shape[2]))        # (B, N, T_l)
+        x = torch.cat(xs, dim=1)                                                  # (B, P, D) every level
+        return F.normalize(self.pool(x, torch.cat(masks, dim=2)), dim=-1)         # (B, N, out_dim)
 
 
 class SegmentContext(nn.Module):
@@ -228,16 +245,18 @@ class SegmentContext(nn.Module):
 
     def forward(
         self,
-        raw,     # (D, T) level-0 features of one video
-        length,  # real steps of the video
-        segs,    # (N, 2) segments, in steps
+        raw,     # (B, D, T) level-0 features
+        length,  # (B,) real steps of every video
+        segs,    # (B, N, 2) segments, in steps (pad_segments)
     ):
-        masks = segment_masks(length, segs, raw.shape[1])            # (N, T)
-        x = raw.t()[None].expand(len(segs), -1, -1)                  # (N, T, D) the same video for every segment
-        span = self.pool(x, masks)                                   # (N, D)
-        glob = raw[:, :length].mean(-1).expand_as(span)              # (N, D)
-        pos = (segs / float(length)).clamp(0, 1)                     # (N, 2)
-        return F.normalize(span + self.mlp(torch.cat((span, glob, pos), -1)), dim=-1) # (N, D)
+        T = raw.shape[2]
+        masks = segment_masks(length, segs, T)                       # (B, N, T)
+        span = self.pool(raw.transpose(1, 2), masks)                 # (B, N, D)
+        real = (torch.arange(T, device=raw.device) < length[:, None]).to(raw.dtype)   # (B, T) real steps
+        glob = (raw * real[:, None]).sum(-1) / length[:, None].to(raw.dtype)          # (B, D) mean of the video
+        glob = glob[:, None].expand_as(span)                         # (B, N, D)
+        pos = (segs / length[:, None, None].to(segs.dtype)).clamp(0, 1)                # (B, N, 2)
+        return F.normalize(span + self.mlp(torch.cat((span, glob, pos), -1)), dim=-1) # (B, N, D)
 
 
 class ArticleCondition(nn.Module):
@@ -279,7 +298,7 @@ class ArticleHead(nn.Module):
 
     def __init__(
         self,
-        dim,               # channels of the level-0 features (1024)
+        dim,               # channels of the pyramid features (1024)
         head_dim,          # size of the video and article vectors (512)
         text_dim=512,      # size of the step text vectors
         num_articles=617,  # every article also gets its own learned vector, added to its text vector
@@ -298,22 +317,23 @@ class ArticleHead(nn.Module):
 
     def pool(
         self,
-        f,  # (B, D, T) features of one pyramid level
-        m,  # (B, 1, T) bool, True = real step
+        feats,  # per level (B, D, T_l) pyramid features
+        masks,  # per level (B, 1, T_l) bool, True = real step
     ):
-        """Mean and max over the real steps of one level, concatenated: (B, 2D)."""
-        m = m.to(f.dtype)
+        """Mean and max over the real steps of every level (all levels in one set), concatenated: (B, 2D)."""
+        f = torch.cat(feats, dim=-1)                    # (B, D, P) the steps of the 6 levels
+        m = torch.cat(masks, dim=-1).to(f.dtype)        # (B, 1, P)
         mean = (f * m).sum(-1) / m.sum(-1).clamp(min=1) # (B, D)
         mx = f.masked_fill(m == 0, -1e4).max(-1).values # (B, D)
         return torch.cat((mean, mx), -1) # (B, 2D)
 
     def forward(
         self,
-        f,        # (B, D, T) level-0 features
-        m,        # (B, 1, T) bool, True = real step
+        feats,    # per level (B, D, T_l) pyramid features
+        masks,    # per level (B, 1, T_l) bool, True = real step
         art_txt,  # (A, text_dim) article vectors
     ):
-        v = F.normalize(self.vid(self.pool(f, m)), dim=-1)              # (B, head_dim) mean + max, then MLP
+        v = F.normalize(self.vid(self.pool(feats, masks)), dim=-1)      # (B, head_dim) mean + max, then MLP
 
         t = F.normalize(self.txt(art_txt) + self.article_learned, dim=-1)   # (A, head_dim)
 

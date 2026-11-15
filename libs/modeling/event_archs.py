@@ -114,7 +114,7 @@ class EventCaptionTransformer(nn.Module):
         feats = [torch.cat((v, a), dim=1) for v, a in zip(fV, fA)]           # per level (B, 1024, T_l), len(feats) = 6
 
         # article head: score of every article for every video, from the features before the article conditioning
-        art_logits = self.article_head(feats[0], msk[0], self.article_raw)  # (B, A)
+        art_logits = self.article_head(feats, msk, self.article_raw)  # (B, A), from every pyramid level
 
         # steps of the video's article (given)
         cands = [x['cand'].to(self.device) for x in video_list]

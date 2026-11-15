@@ -2,6 +2,7 @@
 import torch
 from torch.nn import functional as F
 
+from .heads import pad_segments
 from .losses import ctr_diou_loss_1d, sigmoid_focal_loss, info_NCE_loss, omni_losses
 
 
@@ -59,18 +60,12 @@ def event_losses(
                                         w['omni_temperature'], model.omni_queue, w['omni_nce_temperature'])
 
     # =========================================== Span Loss =========================================
-    qs, gs = [], []
-    for i, x in enumerate(video_list):
-        #                       (D, T)
-        qs.append(model.seg_ctx(raw0[i], int(len0[i]), x['segments'].to(dev).float())) # (M, D)
-        gs.append(cap_pool[i, x['labels'].to(dev)]) # (M,)
-    #                                   (M, D) x (D, N) = (M, N)
-    span_loss = info_NCE_loss(
-        torch.cat(qs),
-        pool_f,
-        torch.cat(gs),
-        scale
-    )
+    # every GT segment of the batch in one call: (B, M, 2) padded segments, (B, M) real ones
+    segs, real = pad_segments([x['segments'].to(dev).float() for x in video_list])
+    qs = model.seg_ctx(raw0, len0, segs)[real]                       # (M', D), video by video
+    gs = torch.cat([cap_pool[i, x['labels'].to(dev)] for i, x in enumerate(video_list)])   # (M',) their steps
+    #                                   (M', D) x (D, N) = (M', N)
+    span_loss = info_NCE_loss(qs, pool_f, gs, scale)
 
     # 6. article head: the video must pick its own article among all of them
     art_loss = F.cross_entropy(art_logits, torch.as_tensor([x['article'] for x in video_list], device=dev))

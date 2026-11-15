@@ -9,13 +9,13 @@ from ..utils import batched_nms
 def omni_gt_vectors(
     omni_span,  # the omni span head of the model
     video,      # the dict of one validation video (segments in steps, omni_seg, omni_ok)
-    feats,      # per level (D, T_l) pyramid features of the video
-    lengths,    # per level, real steps of the video
+    feats,      # per level (1, D, T_l) pyramid features of the video
+    lens,       # (1, L) real steps of the video at every level
 ):
     """Span head vs teacher on every GT segment of the video that has a teacher (start and end given)."""
     has_teacher = video['omni_ok'][video['labels']]                          # (n,)
     segments = video['segments'][has_teacher].to(feats[0].device).float()       # (n', 2) in steps
-    students = omni_span(feats, lengths, segments)                             # (n', 3584)
+    students = omni_span(feats, lens, segments[None])[0]                       # (n', 3584)
     teachers = video['omni_seg'][video['labels']][has_teacher]                # (n', 3584)
     return students.cpu(), teachers.cpu()
 
@@ -66,7 +66,7 @@ def event_inference(
 
         # vector of the segment = mean over the whole segment, computed while it is still in steps
         #                      (D, T0)
-        span = model.seg_ctx(raw0[b], int(len0[b]), segs.to(raw0.device)) # (N, D)
+        span = model.seg_ctx(raw0[b:b + 1], len0[b:b + 1], segs.to(raw0.device)[None])[0] # (N, D)
 
         # step of every segment, among the steps of the article
         # cands: list tensor 1D
@@ -88,7 +88,7 @@ def event_inference(
         segs = ((segs * st + 0.5 * nf) / fps).clamp(min=0.0, max=float(v['duration']))
 
         # omni span head: student and teacher vector of every GT segment, for the distance between them
-        omni_student, omni_teacher = omni_gt_vectors(model.omni_span, v, [f[b] for f in feats], lens[b].tolist())
+        omni_student, omni_teacher = omni_gt_vectors(model.omni_span, v, [f[b:b + 1] for f in feats], lens[b:b + 1])
 
         out.append({'video_id': v['video_id'], 'segments': segs, 'scores': scores,
                     'labels': cand[j].cpu(), 'label_probs': lp.exp().cpu(),

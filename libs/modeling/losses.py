@@ -2,6 +2,8 @@ import torch
 from torch.nn import functional as F
 from torch import Tensor
 
+from .heads import pad_segments
+
 
 def info_NCE_loss(logits, C, targets, scale):
     return F.cross_entropy(scale * logits @  C.t(), targets)
@@ -223,14 +225,15 @@ def omni_losses(
     point_losses = omni_distill_loss(students, teachers, target[keep], temperature, bank, nce_temperature)
 
     # 3. span head
-    span_students, span_target = [], []
+    span_segs, span_target = [], []
     for b, x in enumerate(video_list):
         target = teacher_row[b, x['labels'].to(dev)]    # (n,) row of the teacher of every GT segment left
         keep = target >= 0
-        segments = x['segments'].to(dev).float()[keep]  # (n', 2) start and end, in level-0 steps
-        span_students.append(span([f[b] for f in feats], lens[b].tolist(), segments))   # (n', 3584)
+        span_segs.append(x['segments'].to(dev).float()[keep])   # (n', 2) start and end, in level-0 steps
         span_target.append(target[keep])
-    span_losses = omni_distill_loss(torch.cat(span_students), teachers, torch.cat(span_target), temperature,
+    segs, real = pad_segments(span_segs)                # (B, n, 2), (B, n): the whole batch in one call
+    span_students = span(feats, lens, segs)[real]       # (N, 3584), in the order of span_target
+    span_losses = omni_distill_loss(span_students, teachers, torch.cat(span_target), temperature,
                                     bank, nce_temperature)
     if queue is not None:
         queue.push(teachers)
