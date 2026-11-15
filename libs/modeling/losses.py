@@ -146,6 +146,7 @@ def omni_distill_loss(
     temperature,   # softmax temperature of the kd (0.05)
     bank=None,     # (Q, 3584) teachers of earlier batches (TeacherQueue), extra negatives of the nce, or None
     nce_temperature=0.05,
+    center=None,   # (3584,) mean of the train teacher vectors: the cos loss compares the vectors minus it
 ):
     """Distillation of the OmniRetriever vectors (teachers) into the model (students). Three losses:
 
@@ -153,8 +154,9 @@ def omni_distill_loss(
           the batch: softmax(similarities / temperature). The student's distribution must match the one of its own
           teacher. So the student learns how its segment relates to the other segments, as the teacher sees it
           (a segment of the same step, similar to its teacher, gets a high probability too).
-    cos : 1 - cosine(student, own teacher). Pulls every student onto its teacher, including the part that every
-          teacher shares (the kd ignores it), so the student vector really is close to the teacher vector.
+    cos : 1 - cosine(student - center, own teacher - center), center = train teacher mean: the part every teacher
+          shares is removed, as in the OmniCosC metric, so the loss pulls on what is specific to the segment
+          (without it, the mean alone already gives cos ~0.80).
     nce : InfoNCE, student -> teachers: its own teacher must be the closest among the teachers of the batch and of
           the queue (one-hot target, where kd copies the teacher's soft distribution). This is what OmniR@1
           measures (own teacher = closest of all validation teachers). A candidate (almost) equal to the own
@@ -171,7 +173,8 @@ def omni_distill_loss(
     kd_loss = F.kl_div(F.log_softmax(student_logits, dim=-1), F.log_softmax(teacher_logits, dim=-1),
                        log_target=True, reduction='batchmean')
 
-    cos_loss = (1.0 - F.cosine_similarity(students, own_teachers, dim=-1)).mean()
+    c = 0.0 if center is None else center.to(students.dtype)
+    cos_loss = (1.0 - F.cosine_similarity(students - c, own_teachers - c, dim=-1)).mean()
 
     cands = teachers if bank is None else torch.cat((teachers, bank.to(teachers.dtype)))   # (M + Q, 3584)
     logits = students @ cands.t() / nce_temperature                                  # (N, M + Q)
@@ -194,6 +197,7 @@ def omni_losses(
     temperature=0.05,
     queue=None,      # TeacherQueue: teachers of earlier batches, extra negatives of the nce; the batch is added after
     nce_temperature=0.05,
+    center=None,     # (3584,) mean of the train teacher vectors, for the centred cos loss
 ):
     """Distillation of the OmniRetriever vectors (teachers), for the point head and the span head.
 
@@ -222,7 +226,7 @@ def omni_losses(
     keep = target >= 0
     students = omni_em[video[keep], point[keep]]        # (N, 3584)
     bank = None if queue is None else queue.get()
-    point_losses = omni_distill_loss(students, teachers, target[keep], temperature, bank, nce_temperature)
+    point_losses = omni_distill_loss(students, teachers, target[keep], temperature, bank, nce_temperature, center)
 
     # 3. span head
     span_segs, span_target = [], []
@@ -234,7 +238,7 @@ def omni_losses(
     segs, real = pad_segments(span_segs)                # (B, n, 2), (B, n): the whole batch in one call
     span_students = span(feats, lens, segs)[real]       # (N, 3584), in the order of span_target
     span_losses = omni_distill_loss(span_students, teachers, torch.cat(span_target), temperature,
-                                    bank, nce_temperature)
+                                    bank, nce_temperature, center)
     if queue is not None:
         queue.push(teachers)
     return point_losses, span_losses

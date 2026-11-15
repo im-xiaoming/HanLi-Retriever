@@ -73,7 +73,8 @@ class EventCaptionTransformer(nn.Module):
         self.omni_span = OmniSpanHead(D, omni_head_dim, pool_queries, omni_span_hidden, self.fpn_strides)
         init_heads([self.event_head, self.bound_head, self.embed_head, self.seg_ctx, self.article_cond,
                     self.article_head, self.omni_span])   # Xavier init of every head
-        # mean of the train teacher vectors (the part every segment shares), for the OmniCosC metric; set by train.py
+        # mean of the train teacher vectors (the part every segment shares); set by train.py. Used by the OmniCosC
+        # metric, the centred omni cos loss and the omni heads (their outputs are deviations around it)
         self.omni_teacher_mean = None
         # teachers of the last batches, extra negatives of the omni InfoNCE (not saved in the checkpoints)
         self.omni_queue = TeacherQueue(train_cfg['omni_queue_size'])
@@ -95,6 +96,16 @@ class EventCaptionTransformer(nn.Module):
         self.article_of_step = torch.zeros(len(pool_raw), dtype=torch.long, device=pool_raw.device) # (N,)
         for i, steps in enumerate(article_steps):
             self.article_of_step[torch.as_tensor(steps, device=pool_raw.device)] = i
+
+    @property
+    def omni_teacher_mean(self):
+        return self._omni_teacher_mean
+
+    @omni_teacher_mean.setter
+    def omni_teacher_mean(self, mean):   # (3584,) or None; also given to the omni heads
+        self._omni_teacher_mean = mean
+        self.embed_head.omni_center = mean
+        self.omni_span.center = mean
 
     @property
     def device(self):

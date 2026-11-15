@@ -82,6 +82,12 @@ class EmbedHead(nn.Module):
         # skip connection: the head input (pyramid features), projected to the omni space by a 1x1 conv, is added
         # to the omni output, so the omni vector also sees the features before the conv stack
         self.omni_skip = MaskedConv1D(in_dim, omi_feats_dim, 1, stride=1, padding=0)
+        # mean of the train teacher vectors (set by the model with omni_teacher_mean): the omni output is a
+        # deviation added to it, so the head only learns what is specific to the segment
+        self.omni_center = None
+        # learned scale of the deviation; small at start (raw output ~|50|, the mean ~0.75), so the student
+        # starts near the mean and the deviation grows as it is learned
+        self.omni_dev_scale = nn.Parameter(torch.tensor(0.01))
         self.clip_proj = Linear(clip_dim, feat_dim) # 512 -> 512 : captions
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
@@ -105,6 +111,9 @@ class EmbedHead(nn.Module):
             res += (F.normalize(x1, dim=1).permute(0, 2, 1),)   # (B, T_l, D)
             x2, _ = self.omni_vis_proj(x, m)
             x2 = x2 + self.omni_skip(x_in, m)[0]                # (B, 3584, T_l) + skip from the head input
+            x2 = self.omni_dev_scale * x2
+            if self.omni_center is not None:
+                x2 = x2 + self.omni_center[None, :, None]       # deviation around the train teacher mean
             omni_res += (F.normalize(x2, dim=1).permute(0, 2, 1),)   # (B, T_l, 3584)
 
         return res, omni_res, raw0
@@ -219,6 +228,12 @@ class OmniSpanHead(nn.Module):
         # skip connection: the mean of the segment's steps (all levels), projected linearly to the omni space, is
         # added to the AttentionPool output, a direct path from the features to the omni vector
         self.skip = nn.Linear(dim, out_dim)
+        # mean of the train teacher vectors (set by the model with omni_teacher_mean): the output is a deviation
+        # added to it, so the head only learns what is specific to the segment
+        self.center = None
+        # learned scale of the deviation; small at start (raw output ~|50|, the mean ~0.75), so the student
+        # starts near the mean and the deviation grows as it is learned
+        self.dev_scale = nn.Parameter(torch.tensor(0.01))
 
     def forward(
         self,
@@ -234,7 +249,10 @@ class OmniSpanHead(nn.Module):
         mask = torch.cat(masks, dim=2)                                            # (B, N, P)
         mf = mask.to(x.dtype)
         mean = (mf @ x) / mf.sum(-1, keepdim=True).clamp(min=1)                   # (B, N, D) mean of the segment
-        return F.normalize(self.pool(x, mask) + self.skip(mean), dim=-1)          # (B, N, out_dim)
+        out = self.dev_scale * (self.pool(x, mask) + self.skip(mean))             # (B, N, out_dim)
+        if self.center is not None:
+            out = out + self.center                                               # deviation around the mean
+        return F.normalize(out, dim=-1)
 
 
 class SegmentContext(nn.Module):
