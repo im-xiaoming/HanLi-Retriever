@@ -93,6 +93,10 @@ Mỗi run chỉ chạy một seed. Theo các run có cùng article head:
 | run7 | A100, **64** | Article head dùng AttentionPool trên cả 6 tầng. |
 | run8 | A100, 32 | Article head quay về mean/max tầng 0 (feat0). |
 | run9 | A100, 32 | Thêm skip connection cho omni (point head và span head). |
+| run10 | A100, 32 | Cos loss omni trừ tâm; omni head dự đoán phần lệch quanh vector trung bình teacher; ghép point head và span head lúc suy luận. |
+| run11 | A100, 32 | Quay về cách khởi tạo cũ (bỏ Xavier). |
+| run12 | A100, 32 | `trunc_thresh` 0.25, `crop_ratio` [0.95, 1.0]. |
+| run13 | A100, 32 | `max_seq_len` 320; ghép ridge regression với omni head lúc suy luận. |
 
 ## Kết quả
 
@@ -100,13 +104,30 @@ Mỗi cột là giá trị tốt nhất trên mọi epoch, nên các cột có t
 
 | Run | Epoch (mAP tốt nhất) | mAP | R@0.5 | mIoU | Acc | ArtAcc | OmniCosC | OmniR@1 |
 |---|---|---|---|---|---|---|---|---|
-| run1 | 11 (e10) | 30.83 | **36.29** | **35.06** | 67.94 | **61.57** | 71.84 | 51.84 |
-| run2 | 12 (e11) | **30.89** | 35.85 | 34.66 | 68.37 | 59.22 | **71.86** | 52.37 |
+| run1 | 11 (e10) | 30.83 | 36.29 | **35.06** | 67.94 | **61.57** | 71.84 | 51.84 |
+| run2 | 12 (e11) | 30.89 | 35.85 | 34.66 | 68.37 | 59.22 | 71.86 | 52.37 |
 | run3 | 4 (e4) | 26.21 | 32.41 | 32.50 | 57.02 | 55.69 | 66.76 | 54.18 |
 | run4 | 11 (e9) | 29.57 | 35.25 | 34.59 | 67.93 | 60.98 | 68.03 | 66.25 |
-| run7 | 11 (e9) | 28.59 | 33.95 | 33.46 | 69.00 | 56.67 | 67.63 | 67.09 |
+| run7 | 11 (e9) | 28.59 | 33.95 | 33.46 | 69.05 | 56.67 | 67.63 | 67.09 |
 | run8 | 11 (e9) | 29.98 | 35.59 | 34.62 | 69.89 | 61.18 | 68.15 | 66.69 |
-| run9 | 13 (e11) | 30.17 | 35.32 | 34.66 | **70.33** | 58.82 | 64.62 | **67.53** |
+| run9 | 13 (e11) | 30.17 | 35.32 | 34.66 | 70.33 | 58.82 | 64.62 | 67.53 |
+| run10 | 13 (e11) | 30.17 | 35.32 | 34.66 | 70.33 | 58.82 | 65.53 | 67.76 |
+| run11 | 12 (e10) | 30.44 | 35.89 | 34.67 | **70.76** | 59.80 | 65.94 | 68.86 |
+| run12 | 13 (e11) | **30.98** | **36.32** | 34.91 | 70.06 | 60.00 | 66.01 | 69.50 |
+| run13 | 11 (e11) | 30.25 | 36.05 | 34.86 | 68.66 | **61.57** | **73.98*** | **70.74*** |
+
+\* Run13 ghép ridge regression lúc suy luận. Riêng hai omni head của run13 đạt OmniCosC 66.14 và OmniR@1 69.20; riêng ridge đạt 69.65 và 60.10. Ghép ridge vào checkpoint run11 (không train lại) cũng nâng OmniCosC từ 65.81 lên 73.58 và OmniR@1 từ 67.63 lên 68.96.
+
+Số liệu đầy đủ của mỗi run nằm trong `experiments/results_20261115.csv`, gồm cả commit code, epoch của checkpoint và đường dẫn log.
+
+### Lưu trữ
+
+| | Run 1–5 (RTX 3060) | Run 6–13 (A100) |
+|---|---|---|
+| Checkpoint | `ckpt/runN/model_best.pth.tar` (mAP tốt nhất), `ckpt/runN/model_best_article.pth.tar` (ArtAcc tốt nhất) | như cột bên, tải về từ Colab |
+| Log từng epoch | `experiments/runs/DESKTOP-8PSQBN9-*.json` | `experiments/colab_logs/runN.log` |
+
+Checkpoint chỉ được ghi khi thang đo tăng ít nhất 0.3, nên epoch của checkpoint có thể khác epoch có số cao nhất trong bảng (xem cột `ckpt_epoch` trong file CSV).
 
 ## So sánh với các bài báo
 
