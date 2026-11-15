@@ -200,10 +200,9 @@ Mô hình được huấn luyện trên train split của HT-Step. Máy chủ ch
 \item \textbf{OmniCosC}: trung bình $100 \cdot \cos(\hat{\mathbf{s}} - \boldsymbol{\mu}, \mathbf{t} - \boldsymbol{\mu})$ trên các đoạn GT. Trừ $\boldsymbol{\mu}$ để chỉ phần riêng của từng đoạn được chấm; dự đoán $\boldsymbol{\mu}$ cho mọi đoạn được khoảng 0.
 \item \textbf{OmniR@1}: tỉ lệ đoạn mà teacher embedding của chính nó gần student nhất trong 2990 teacher embedding của validation split; chọn ngẫu nhiên được khoảng 0,03.
 \end{itemize}
-Trừ khi ghi khác, các số được chấm trên 510 video có feature. Thang đo chính thức trên đủ 600 video (video thiếu feature bị tính là bỏ sót) chỉ dùng khi so với các công trình khác.
 
 \subsection{Cài đặt}
-Mô hình được huấn luyện bằng AdamW, batch 32, learning rate $3 \cdot 10^{-4}$ (lớp chiếu văn bản $3 \cdot 10^{-3}$), weight decay $10^{-4}$, 2 epoch linear warmup rồi cosine decay trong 13 epoch, drop path 0,1. Mô hình được đánh giá bằng exponential moving average (EMA, hệ số 0,999) của trọng số. Lúc huấn luyện, video bị cắt ngẫu nhiên (giữ 95--100\% độ dài). Việc huấn luyện dừng sớm khi không thang đo nào trong mAP, ArtAcc, OmniCosC tăng thêm ít nhất 0,3 trong 2 epoch liên tiếp; checkpoint được chọn theo mAP. Mỗi lượt huấn luyện mất khoảng 26 phút trên một GPU A100. Mỗi cấu hình chỉ chạy với một seed.
+Mô hình được huấn luyện bằng AdamW, batch 32, learning rate $3 \cdot 10^{-4}$ (lớp chiếu văn bản $3 \cdot 10^{-3}$), weight decay $10^{-4}$, 2 epoch linear warmup rồi cosine decay trong 13 epoch, drop path 0,1. Mô hình được đánh giá bằng exponential moving average (EMA, hệ số 0,999) của trọng số. Lúc huấn luyện, video bị cắt ngẫu nhiên (giữ 95--100\% độ dài). Việc huấn luyện dừng sớm khi không thang đo nào trong mAP, ArtAcc, OmniCosC tăng thêm ít nhất 0,3 trong 2 epoch liên tiếp; checkpoint được chọn theo mAP. Mỗi lượt huấn luyện mất khoảng 26 phút trên một GPU A100.
 
 \subsection{Kết quả chính}
 Bảng~\ref{tab:main} cho kết quả của mô hình đầy đủ. Ghép ridge regression không thay đổi các thang đo định vị nhưng nâng OmniCosC từ 66,01 lên 73,86 và OmniR@1 từ 69,00 lên 69,90. Ghép tốt hơn cả từng phần riêng, cho thấy hai student head và ridge regression nắm được những phần khác nhau của teacher embedding.
@@ -232,7 +231,7 @@ Ridge regression & \multicolumn{2}{c|}{69,52} & \multicolumn{2}{c|}{60,00} & \\
 \end{table}
 
 \subsection{So sánh với các công trình khác}
-Bảng~\ref{tab:sota} so mAP với các công trình khác. Cột trung bình của các bài so sánh là trung bình trên các ngưỡng tIoU 0,3 đến 0,7, cùng cách tính với mAP của chúng tôi. Các số của bài HT-Step được chấm trên test split, còn lại trên val\_seen, nên phép so chỉ mang tính tham khảo. Mô hình của chúng tôi vượt xa các phương pháp training-free và weakly supervised, và xấp xỉ ActionFormer-T supervised. Trên đủ 600 video, mAP của các bước khớp hoàn toàn và khớp một phần với bài viết lần lượt là 29,92 và 22,47, so với 29,6 và 20,4 của ActionFormer trên test split~\cite{htstep}. Ngược lại, R@1 của step grounding (thời điểm được chọn cho mỗi bước có nằm trong một đoạn GT của bước đó không) chỉ đạt 37,96, thấp hơn VINA (39,1)~\cite{vina} và các phương pháp training-free (54--57)~\cite{baglm,hsd}: mô hình được tối ưu cho việc định vị đoạn và xếp hạng theo mAP, còn thời điểm cho R@1 chỉ được lấy đơn giản là tâm của đoạn có điểm cao nhất.
+Bảng~\ref{tab:sota} so mAP với các công trình khác. Cột trung bình của các bài so sánh là trung bình trên các ngưỡng tIoU 0,3 đến 0,7, cùng cách tính với mAP của chúng tôi. Các số của bài HT-Step được chấm trên test split, còn lại trên val\_seen, nên phép so chỉ mang tính tham khảo. Mô hình của chúng tôi vượt xa các phương pháp training-free và weakly supervised, và xấp xỉ ActionFormer-T supervised. Khi chấm trên cả 600 video của val\_seen, trong đó 90 video không tải được không có dự đoán nào và mọi đoạn GT của chúng bị tính là bỏ sót, mAP của các bước khớp hoàn toàn và khớp một phần với bài viết lần lượt là 29,92 và 22,47, so với 29,6 và 20,4 của ActionFormer trên test split~\cite{htstep}. Ngược lại, R@1 của step grounding (thời điểm được chọn cho mỗi bước có nằm trong một đoạn GT của bước đó không) chỉ đạt 37,96, thấp hơn VINA (39,1)~\cite{vina} và các phương pháp training-free (54--57)~\cite{baglm,hsd}: mô hình được tối ưu cho việc định vị đoạn và xếp hạng theo mAP, còn thời điểm cho R@1 chỉ được lấy đơn giản là tâm của đoạn có điểm cao nhất.
 
 \begin{table*}[t]
 \caption{So sánh mAP article grounding với các công trình khác}
@@ -244,7 +243,7 @@ Phương pháp & Cách học & Tập chấm & @0,3 & @0,5 & @0,7 & TB 0,3--0,7 \
 \hline
 ActionFormer~\cite{htstep} & supervised & test seen & -- & -- & -- & 25,4 \\
 ActionFormer-T~\cite{htstep} & supervised & test seen & 36,9 & 26,5 & 15,3 & 26,3 \\
-ActionFormer-T + pre-training HowTo100M~\cite{htstep} & supervised & test seen & 41,2 & 30,8 & 18,3 & 30,2 \\
+ActionFormer-T + pre-training HowTo100M~\cite{htstep} & supervised & test seen & 41,2 & 30,8 & \textbf{18,3} & 30,2 \\
 \hline
 NaSVA (chạy lại trong~\cite{hsd}) & weakly supervised & val\_seen (600) & 15,02 & 5,70 & 1,11 & 6,89 \\
 BaGLM, InternVL2.5-8B~\cite{baglm} & training-free & val\_seen (600) & 15,90 & 6,70 & 1,50 & 7,70 \\
@@ -252,13 +251,13 @@ UniTime-7B (trong~\cite{hsd}) & grounding câu & val\_seen (600) & 19,92 & 11,48
 HSD, Qwen3-VL-8B~\cite{hsd} & training-free & val\_seen (600) & 26,45 & 13,78 & 6,16 & 15,13 \\
 \hline
 \textbf{Của chúng tôi} & supervised & val\_seen (600) & 37,72 & 27,41 & 14,42 & 26,73 \\
-\textbf{Của chúng tôi} & supervised & val\_seen (510) & 43,58 & 31,71 & 16,92 & 30,99 \\
+\textbf{Của chúng tôi} & supervised & val\_seen (510) & \textbf{43,58} & \textbf{31,71} & 16,92 & \textbf{30,99} \\
 \hline
 \end{tabular}
 \end{table*}
 
 \subsection{Ablation study}
-Bảng~\ref{tab:ablation} cho kết quả khi thêm dần từng thành phần; mỗi dòng từ (a) đến (g) thêm thay đổi vào dòng ngay trên, còn dòng (h) bỏ InfoNCE khỏi mô hình đầy đủ (g). Mọi dòng được chấm lại từ checkpoint được chọn theo mAP của mỗi lượt, bằng đúng phiên bản mã đã huấn luyện lượt đó.
+Bảng~\ref{tab:ablation} cho kết quả khi thêm dần từng thành phần; mỗi dòng từ (a) đến (f) thêm thay đổi vào dòng ngay trên, còn dòng (g) bỏ InfoNCE khỏi mô hình đầy đủ (f). Mọi dòng được chấm lại từ checkpoint được chọn theo mAP của mỗi lượt, bằng đúng phiên bản mã đã huấn luyện lượt đó.
 
 \begin{table*}[t]
 \caption{Thêm dần từng thành phần (val\_seen, 510 video)}
@@ -270,15 +269,14 @@ Bảng~\ref{tab:ablation} cho kết quả khi thêm dần từng thành phần; 
 \hline
 Cấu hình & mAP & R@0,5 & mIoU & Acc & ArtAcc & OmniCosC & OmniR@1 \\
 \hline
-(a) Mô hình gốc: SegmentContext lấy trung bình, segment-wise head chỉ dùng tầng 0, distillation bằng KL + cos & 30,55 & 36,29 & 34,88 & 66,50 & 61,57 & 71,84 & 50,07 \\
+(a) Mô hình gốc: SegmentContext lấy trung bình, segment-wise head chỉ dùng tầng 0, distillation bằng KL + cos & 30,55 & 36,29 & 34,88 & 66,50 & \textbf{61,57} & 71,84 & 50,07 \\
 (b) + SegmentContext dùng attention pooling & 30,87 & 35,62 & 34,39 & 66,83 & 58,24 & 71,85 & 51,30 \\
 (c) + InfoNCE có hàng đợi, segment-wise head dùng cả 6 tầng & 29,57 & 34,95 & 34,39 & 67,93 & 60,59 & 67,71 & 65,38 \\
-(d) + lịch học 15 epoch & 29,71 & 34,41 & 33,89 & 65,80 & 60,59 & 68,15 & 64,11 \\
-(e) + nhánh tuyến tính, phần lệch quanh $\boldsymbol{\mu}$, cos trừ trung bình, ghép hai head & 30,29 & 35,89 & 34,60 & 68,41 & 59,02 & 65,81 & 67,63 \\
-(f) + cắt ngẫu nhiên nhẹ hơn (95--100\%) & 30,99 & 36,09 & 34,45 & 70,06 & 59,80 & 66,01 & 69,00 \\
-(g) + ridge regression lúc inference (mô hình đầy đủ) & 30,99 & 36,09 & 34,45 & 70,06 & 59,80 & 73,86 & 69,90 \\
+(d) + nhánh tuyến tính, phần lệch quanh $\boldsymbol{\mu}$, cos trừ trung bình, ghép hai head & 30,29 & 35,89 & 34,60 & 68,41 & 59,02 & 65,81 & 67,63 \\
+(e) + cắt ngẫu nhiên nhẹ hơn (95--100\%) & 30,99 & 36,09 & 34,45 & \textbf{70,06} & 59,80 & 66,01 & 69,00 \\
+(f) + ridge regression lúc inference (mô hình đầy đủ) & 30,99 & 36,09 & 34,45 & \textbf{70,06} & 59,80 & 73,86 & \textbf{69,90} \\
 \hline
-(h) (g) bỏ InfoNCE của hai student head (chỉ KL + cos) & 31,09 & 36,62 & 35,40 & 69,12 & 59,61 & 74,83 & 62,47 \\
+(g) (f) bỏ InfoNCE của hai student head (chỉ KL + cos) & \textbf{31,09} & \textbf{36,62} & \textbf{35,40} & 69,12 & 59,61 & \textbf{74,83} & 62,47 \\
 \hline
 \end{tabular}
 \end{table*}
@@ -286,9 +284,9 @@ Cấu hình & mAP & R@0,5 & mIoU & Acc & ArtAcc & OmniCosC & OmniR@1 \\
 Một số nhận xét:
 \begin{itemize}
 \item \textbf{InfoNCE đổi OmniCosC lấy OmniR@1.} Từ (b) sang (c), OmniR@1 tăng từ 51,30 lên 65,38 nhưng OmniCosC giảm từ 71,85 xuống 67,71. InfoNCE dạy student gần teacher của mình \emph{hơn} các teacher khác, chứ không kéo student \emph{sát} teacher.
-\item \textbf{Cắt ngẫu nhiên nhẹ hơn giúp định vị.} Từ (e) sang (f), mAP tăng 0,70 và Acc tăng 1,65.
-\item \textbf{Ridge regression bù lại phần OmniCosC đã mất.} Dòng (g) đạt OmniCosC 73,86, cao hơn cả dòng (a) không dùng InfoNCE, trong khi vẫn giữ OmniR@1 gần 70.
-\item \textbf{Bỏ InfoNCE khỏi mô hình đầy đủ xác nhận lại sự đánh đổi trên.} Dòng (h) tăng OmniCosC lên 74,83 và mAP lên 31,09, nhưng OmniR@1 giảm 7,43 điểm, còn 62,47. Chúng tôi giữ (g) làm mô hình đầy đủ vì embedding của nó phân biệt các đoạn tốt hơn hẳn, trong khi mAP chỉ kém 0,10, nằm trong dao động.
+\item \textbf{Cắt ngẫu nhiên nhẹ hơn giúp định vị.} Từ (d) sang (e), mAP tăng 0,70 và Acc tăng 1,65.
+\item \textbf{Ridge regression bù lại phần OmniCosC đã mất.} Dòng (f) đạt OmniCosC 73,86, cao hơn cả dòng (a) không dùng InfoNCE, trong khi vẫn giữ OmniR@1 gần 70.
+\item \textbf{Bỏ InfoNCE khỏi mô hình đầy đủ xác nhận lại sự đánh đổi trên.} Dòng (g) tăng OmniCosC lên 74,83 và mAP lên 31,09, nhưng OmniR@1 giảm 7,43 điểm, còn 62,47. Chúng tôi giữ (f) làm mô hình đầy đủ vì embedding của nó phân biệt các đoạn tốt hơn hẳn, trong khi mAP chỉ kém 0,10, nằm trong dao động.
 \end{itemize}
 
 Một số thay đổi khác đã thử nhưng không giữ: (i) gộp feature cả sáu tầng cho recipe head (ArtAcc tốt nhất 60,20 với trung bình và max, 56,67 với attention pooling, so với 60,59 khi chỉ dùng tầng 0, hai cách đầu chạy với batch 64); (ii) khởi tạo Xavier cho mọi head, làm mAP giảm 0,3, ArtAcc giảm 1,0 và OmniCosC giảm 0,4 so với cách khởi tạo cũ trên cùng cấu hình; (iii) batch 64 với cùng learning rate, làm mAP giảm khoảng 1,5; (iv) $T = 320$ thay cho 256, làm mAP giảm 0,7.
@@ -308,7 +306,7 @@ Chỉ văn bản của bước đúng & 49,28 \\
 Trung bình feature trong đoạn & 67,77 \\
 Trung bình, max trong đoạn + trung bình video & 69,52 \\
 \quad + văn bản của recipe & 70,58 \\
-\quad + văn bản của bước đúng & 71,12 \\
+\quad + văn bản của bước đúng & \textbf{71,12} \\
 \hline
 Nearest neighbor ($k = 50$) & 52,76 \\
 \hline
@@ -339,7 +337,6 @@ T$\to$AV R@5 & 22,04 & 43,14 & +21,10 [+19,30; +22,91] \\
 AV$\to$T R@1 & 21,97 & 40,17 & +18,19 [+16,32; +20,07] \\
 AV$\to$T R@5 & 31,81 & 53,85 & +22,04 [+20,20; +23,95] \\
 \hline
-\multicolumn{4}{p{230pt}}{CI: paired bootstrap theo câu hỏi, 2000 lần. Checkpoint được chọn trên chính val\_seen nên mức tăng này lạc quan.}
 \end{tabular}
 \end{table}
 
