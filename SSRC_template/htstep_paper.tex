@@ -63,7 +63,7 @@ Bài báo đề xuất một mô hình multi-task theo hướng ActionFormer~\ci
 \item Một cách distill embedding của mô hình audio-visual retrieval bảy tỉ tham số vào một point-wise head và một segment-wise head, với cosine loss đã trừ trung bình để khớp với thang đo.
 \item Một ridge regression trên input feature, ghép lúc inference, tăng độ tương đồng với teacher embedding từ 66,01 lên 73,86 mà không cần huấn luyện lại.
 \item Một loạt ablation và phân tích cận trên, cho biết thành phần nào có ích và giới hạn còn lại nằm ở đâu.
-\item Một ứng dụng truy hồi bước trong kho video (Mục~\ref{sec:retrieval}): chỉ mục đa vector theo sự kiện dùng các đoạn và segment-wise head của mô hình cho truy hồi video và định vị khoảnh khắc, kèm một giao thức đánh giá không rò rỉ recipe, multi-positive, tách tập dev và benchmark, zero-shot.
+\item Một ứng dụng truy hồi bước trong kho video (Mục~\ref{sec:retrieval}): chỉ mục đa vector theo sự kiện dùng các đoạn và segment-wise head của mô hình cho truy hồi video và định vị khoảnh khắc, kèm một giao thức đánh giá không rò rỉ recipe, multi-positive, tách tập val và benchmark, zero-shot.
 \end{itemize}
 
 \section{Công trình liên quan}
@@ -340,7 +340,7 @@ AV$\to$T R@5 & 31,81 & 53,85 & +22,04 [+20,20; +23,95] \\
 \end{tabular}
 \end{table}
 
-\textbf{Bộ định vị.} Mô hình ở Bảng~\ref{tab:main}--\ref{tab:ceiling} được distill từ một teacher khác: OmniRetriever với một adapter LoRA HT-Step do nhóm huấn luyện trước đó. Ở mục này, bộ định vị được huấn luyện lại một lần với teacher là OmniRetriever-HT, để vector của segment-wise head nằm cùng không gian với câu hỏi. Bộ định vị dùng cấu hình (a) của Bảng~\ref{tab:ablation} vì kế hoạch thực nghiệm đã khoá việc giữ nguyên mã nguồn và cấu hình mặc định của phiên bản đã dùng trước đó, chỉ đổi teacher [CẦN TÁC GIẢ GIẢI THÍCH]. Với teacher mới, nó đạt mAP 30,29 và ArtAcc 59,61 trên val\_seen.
+\textbf{Bộ định vị.} Mô hình ở Bảng~\ref{tab:main}--\ref{tab:ceiling} được distill từ một teacher khác: OmniRetriever với một adapter LoRA HT-Step do nhóm huấn luyện trước đó. Ở mục này, bộ định vị được huấn luyện lại một lần với teacher là OmniRetriever-HT, để vector của segment-wise head nằm cùng không gian với câu hỏi. Bộ định vị dùng cấu hình (a) của Bảng~\ref{tab:ablation} vì đó là phiên bản đã có khi kế hoạch thực nghiệm được khoá; các thành phần (b)--(f) được thêm sau, và đổi sang mô hình đầy đủ (f) sẽ đòi hỏi chọn lại tham số trên val và khoá lại giao thức benchmark. Với teacher mới, nó đạt mAP 30,29 và ArtAcc 59,61 trên val\_seen.
 
 \textbf{Không rò rỉ recipe.} Recipe conditioning~\eqref{eq:artc} cần văn bản các bước của recipe, vốn lấy từ nhãn, tức đọc trước đáp án. Chúng tôi thay chúng bằng các bước của recipe mà recipe head xếp hạng nhất (top-1), qua một adapter, không sửa mã nguồn mô hình.
 
@@ -348,7 +348,7 @@ AV$\to$T R@5 & 31,81 & 53,85 & +22,04 [+20,20; +23,95] \\
 \textbf{Cách cắt.} Đoạn \emph{sự kiện} là các đoạn dự đoán có điểm không nhỏ hơn ngưỡng $\theta$ (không đoạn nào đạt thì giữ đoạn điểm cao nhất; đoạn trùng nhiều được gộp, đoạn quá ngắn được nới ra). Đoạn \emph{lấp}: mỗi khoảng chưa được phủ dài ít nhất $L_{\min}$ được chia đều thành các cửa sổ dài xấp xỉ $L_{\mathrm{fill}}$. Hai cách cắt đều, theo độ dài $L$ và theo số đoạn, tách tác dụng của ranh giới khỏi tác dụng của số đoạn. Bảng~\ref{tab:ret_cuts} liệt kê mọi cách cắt; đoạn ground truth (GT) là đoạn có nhãn, chỉ dùng làm cận trên.
 
 \begin{table}[t]
-\caption{Các cách cắt video (số vector mỗi video đo trên dev)}
+\caption{Các cách cắt video (số vector mỗi video đo trên val)}
 \label{tab:ret_cuts}
 \setlength{\tabcolsep}{3pt}
 \centering
@@ -375,23 +375,23 @@ s_i = \cos(\mathbf{t}, \mathbf{e}_i) + \beta \cos(\mathbf{t}, \mathbf{h}_i), \qq
 trong đó $S(q, V)$ là điểm của video $V$ và khoảnh khắc trả về là đoạn đạt cực đại. \emph{Phương pháp đề xuất} là Omni + student trên cách cắt Sự kiện + lấp.
 
 \subsection{Giao thức đánh giá}
-\textbf{Dev và benchmark.} Tập val\_seen (510 video, 2990 câu hỏi) là tập dev, nơi chọn tham số và cách chấm chính. YouCook2~\cite{youcook2} là benchmark zero-shot: không mô hình nào được huấn luyện hay chọn trên đó, và không video nào trùng ID YouTube với tập train hay tập dev.
+\textbf{Val và benchmark.} Tập val\_seen (510 video, 2990 câu hỏi), gọi tắt là val, là nơi chọn tham số và cách chấm chính. YouCook2~\cite{youcook2} là benchmark zero-shot: không mô hình nào được huấn luyện hay chọn trên đó, và không video nào trùng ID YouTube với tập train hay tập val.
 
 \textbf{Câu hỏi và đáp án.} Mỗi câu hỏi là câu mô tả nguyên văn của một bước có nhãn. Nhiều video có bước cùng câu chữ, nên chế độ chính là \emph{multi-positive}: một video là đáp án đúng nếu có bước cùng câu chữ với câu hỏi (sau khi viết thường, bỏ dấu câu, gộp khoảng trắng).
 
 \textbf{Thang đo.} R@1 của truy hồi video. VCMR R@1: video đứng đầu đúng và đoạn trả về có tIoU từ 0,5 với một bước cùng câu chữ trong video đó. Hiệu giữa hai cấu hình đi kèm khoảng tin cậy 95\% bằng paired bootstrap theo video (1000 lần, seed 0)~\cite{bootstrap}. Tham số và giao thức benchmark được khoá trước khi chấm benchmark; một so sánh đạt khi cận dưới của khoảng tin cậy lớn hơn 0.
 
-\subsection{Kết quả trên tập dev}
+\subsection{Kết quả trên tập val}
 Theo luật viết trước: $\theta = 0{,}402$ cho số đoạn sự kiện trung bình mỗi video (5,888) gần nhất với số bước trung bình của HT-Step train (5,910); $(L_{\min}, L_{\mathrm{fill}}) = (5, 10)$ giây cho R@1 của Student trên Sự kiện + lấp cao nhất trong lưới $\{3, 5\} \times \{8, 10, 15\}$, từ đó $L = 11{,}89$ giây; $\beta = 1{,}0$ cho R@1 của Omni + student cao nhất trong lưới $\{0;\,0{,}1;\,0{,}2;\,0{,}3;\,0{,}5;\,1{,}0\}$, ở biên trên của lưới. Cách chấm chính là Omni + student, vì cận dưới khoảng tin cậy của hiệu so với Omni trên Sự kiện + lấp lớn hơn 0 (Bảng~\ref{tab:ret_pairs}, dòng 8).
 
 \begin{table*}[t]
-\caption{R@1 multi-positive của ba cách chấm và VCMR R@1 của cách chấm Omni, trên dev và YouCook2 (zero-shot, 635 video)}
+\caption{R@1 multi-positive của ba cách chấm và VCMR R@1 của cách chấm Omni, trên val và YouCook2 (zero-shot)}
 \label{tab:ret_dev}
 \setlength{\tabcolsep}{4pt}
 \centering
 \begin{tabular}{|l|c|c|c|c|c|c|c|c|}
 \hline
- & \multicolumn{4}{c|}{Dev (val\_seen)} & \multicolumn{4}{c|}{YouCook2} \\
+ & \multicolumn{4}{c|}{Val (val\_seen)} & \multicolumn{4}{c|}{YouCook2} \\
 \hline
 Cách cắt & Omni & Student & Omni + student & VCMR & Omni & Student & Omni + student & VCMR \\
 \hline
@@ -407,19 +407,19 @@ Sự kiện + lấp & 59,60 & 58,56 & \textbf{63,34} & 15,92 & \textbf{17,15} & 
 \end{tabular}
 \end{table*}
 
-Trên dev, với cách chấm Omni, Sự kiện + lấp hơn Cả video và hơn Đều theo số đoạn, nhưng chưa hơn Đều theo độ dài có ý nghĩa thống kê (Bảng~\ref{tab:ret_pairs}, dòng 1--3). Ranh giới giúp rõ ở định vị khoảnh khắc (dòng 9). Cộng vector student vào vector Omni tăng R@1 ở mọi cách cắt trên dev (Bảng~\ref{tab:ret_dev}).
+Trên val, với cách chấm Omni, Sự kiện + lấp hơn Cả video và hơn Đều theo số đoạn, nhưng chưa hơn Đều theo độ dài có ý nghĩa thống kê (Bảng~\ref{tab:ret_pairs}, dòng 1--3). Ranh giới giúp rõ ở định vị khoảnh khắc (dòng 9). Cộng vector student vào vector Omni tăng R@1 ở mọi cách cắt trên val (Bảng~\ref{tab:ret_dev}).
 
 \subsection{Benchmark YouCook2 (zero-shot)}
-Kho benchmark gồm 635 trong số 1500 video YouCook2 có nhãn và có tệp mp4: việc trích feature dừng giữa chừng, và các video được giữ là các video đã trích xong theo thứ tự tên ID, không dựa vào nhãn hay kết quả. Câu hỏi (4967 câu) chỉ lấy từ 635 video này; mọi tham số giữ nguyên như đã khoá trên dev. Trên kho này, recall của bước GT ở tIoU 0,3 / 0,5 / 0,7 là 37,99 / 24,86 / 13,67, với trung bình 5,55 đoạn sự kiện mỗi video so với 7,82 bước GT.
+Chúng tôi đánh giá zero-shot trên YouCook2~\cite{youcook2} với 4967 câu hỏi; mọi tham số giữ nguyên như đã khoá trên val. Recall của bước GT ở tIoU 0,3 / 0,5 / 0,7 là 37,99 / 24,86 / 13,67, với trung bình 5,55 đoạn sự kiện mỗi video so với 7,82 bước GT.
 
 \begin{table}[t]
-\caption{Hiệu R@1 multi-positive và CI 95\% trên dev và YouCook2}
+\caption{Hiệu R@1 multi-positive và CI 95\% trên val và YouCook2}
 \label{tab:ret_pairs}
 \setlength{\tabcolsep}{2pt}
 \centering
 \begin{tabular}{|p{82pt}|c|c|}
 \hline
-Cặp so sánh & Dev & YouCook2 \\
+Cặp so sánh & Val & YouCook2 \\
 \hline
 1. Omni: Sự kiện + lấp $-$ Cả video & +10,60 [+7,24; +14,08] & +10,59 [+9,22; +11,94] \\
 2. Omni: Sự kiện + lấp $-$ Đều theo số đoạn & +6,22 [+3,74; +8,73] & +7,69 [+6,40; +8,87] \\
@@ -433,18 +433,32 @@ Cặp so sánh & Dev & YouCook2 \\
 9. VCMR R@1, Omni: Sự kiện $-$ Đều theo số đoạn & +20,07 [+17,55; +22,59] & +2,60 [+1,85; +3,31] \\
 10. Đoạn GT $-$ Sự kiện + lấp, Omni + student & -- & +3,66 [+2,60; +4,79] \\
 \hline
-\multicolumn{3}{p{236pt}}{Đề xuất: Omni + student, $\beta = 1{,}0$, trên Sự kiện + lấp. Dòng 4, 5, 7, 8, 9 là các so sánh khoá trước trên YouCook2; các dòng còn lại là chỉ báo. --: cặp không được chấm trên dev.}
+\multicolumn{3}{p{236pt}}{Đề xuất: Omni + student, $\beta = 1{,}0$, trên Sự kiện + lấp. Dòng 4, 5, 7, 8, 9 là các so sánh khoá trước trên YouCook2; các dòng còn lại là chỉ báo. --: cặp không được chấm trên val.}
 \end{tabular}
 \end{table}
 
-Với vector Omni, cách cắt Sự kiện + lấp nâng R@1 từ 6,56 (Cả video) lên 17,15 (Bảng~\ref{tab:ret_dev}): mức tăng +10,59 gần bằng trên dev (+10,60), và hơn cắt đều theo số đoạn +7,69 (Bảng~\ref{tab:ret_pairs}, dòng 1--2). Hai so sánh chính khoá trước đều đạt (dòng 4 và 5): phương pháp đề xuất có tác dụng zero-shot trên YouCook2, cả so với một vector lẫn so với cắt đều. Ranh giới sự kiện giúp định vị đúng khoảnh khắc (dòng 9). Cách chấm Student, không chạy mô hình 7 tỉ tham số phía video, vẫn hơn một vector Omni cho mỗi video (dòng 7). So sánh ở dòng 8 không đạt: trên YouCook2, cộng vector student làm R@1 giảm 3,14 điểm so với chỉ dùng vector Omni trên cùng đoạn, ngược với dev; cách chấm chính vẫn giữ như đã khoá. Như trên dev, cắt theo sự kiện chưa hơn cắt đều theo độ dài (dòng 3, 6). OmniRetriever gốc trừ OmniRetriever-HT, cùng cách chấm Omni, là +0,60 [$-$0,35; +1,48] trên Cả video và +0,08 [$-$1,33; +1,60] trên Sự kiện + lấp: hai mô hình không khác nhau có ý nghĩa thống kê trên YouCook2.
+Với vector Omni, cách cắt Sự kiện + lấp nâng R@1 từ 6,56 (Cả video) lên 17,15 (Bảng~\ref{tab:ret_dev}): mức tăng +10,59 gần bằng trên val (+10,60), và hơn cắt đều theo số đoạn +7,69 (Bảng~\ref{tab:ret_pairs}, dòng 1--2). Hai so sánh chính khoá trước đều đạt (dòng 4 và 5): phương pháp đề xuất có tác dụng zero-shot trên YouCook2, cả so với một vector lẫn so với cắt đều. Ranh giới sự kiện giúp định vị đúng khoảnh khắc (dòng 9). Cách chấm Student, không chạy mô hình 7 tỉ tham số phía video, vẫn hơn một vector Omni cho mỗi video (dòng 7). So sánh ở dòng 8 không đạt: trên YouCook2, cộng vector student làm R@1 giảm 3,14 điểm so với chỉ dùng vector Omni trên cùng đoạn, ngược với val; cách chấm chính vẫn giữ như đã khoá. Như trên val, cắt theo sự kiện chưa hơn cắt đều theo độ dài (dòng 3, 6). OmniRetriever gốc trừ OmniRetriever-HT, cùng cách chấm Omni, là +0,60 [$-$0,35; +1,48] trên Cả video và +0,08 [$-$1,33; +1,60] trên Sự kiện + lấp: hai mô hình không khác nhau có ý nghĩa thống kê trên YouCook2.
 
-\textbf{Hạn chế.} Số dev lạc quan vì checkpoint của hai mô hình và mọi tham số đều được chọn trên dev. Lúc huấn luyện, bộ định vị luôn được cho recipe đúng, còn lúc truy hồi phải tự đoán; recipe đoán sai trên miền khác có thể làm vector student yếu đi (giả thuyết, chưa đo). Kho benchmark chỉ gồm 635 trong 1500 video. Lần chấm benchmark đầu dùng câu hỏi của cả 1500 video trên kho 635 video; chúng tôi lọc lại câu hỏi, khoá lại giao thức và chấm lại, không đổi tham số nào. Mỗi cấu hình chạy một seed; dữ liệu pretrain của OmniRetriever gốc cũng lấy từ YouTube.
+\section{Hạn chế}
+\label{sec:limits}
+\textbf{Đánh giá.} Vì máy chủ chấm test split của HT-Step đã đóng, mọi kết quả đều được chấm trên val\_seen. Checkpoint, hệ số $\lambda$ của ridge regression và các lựa chọn thiết kế cũng được chọn trên tập này, nên các số có thể lạc quan hơn so với trên dữ liệu chưa thấy. Mỗi cấu hình chỉ chạy một seed; theo các lượt có cùng recipe head, ArtAcc dao động khoảng $\pm 1{,}5$ điểm, nên các chênh lệch mAP dưới khoảng 0,5 điểm chưa đủ để kết luận. Ngoài ra, 90 trong 600 video của val\_seen không còn tải được từ YouTube, và mô hình mới chỉ được đánh giá trên các seen activity; khả năng tổng quát sang activity chưa thấy hay bộ dữ liệu khác chưa được kiểm chứng.
+
+\textbf{Phụ thuộc vào recipe đúng.} Recipe conditioning dùng văn bản các bước của recipe đúng, đúng như thiết lập article grounding của HT-Step. Trong thực tế, recipe thường phải được đoán, mà recipe head chỉ đúng cho khoảng 60\% số video; khi recipe bị đoán sai, các bước được dùng làm điều kiện cũng sai và chất lượng định vị giảm rõ rệt.
+
+\textbf{Input feature.} Mô hình chỉ nhìn thấy feature trích sẵn, mỗi giây một vector action recognition và một vector sound event, không có lời nói và không có chi tiết ở mức khung hình. Phân tích giới hạn của OmniCosC cho thấy một phép chiếu tuyến tính từ chính các feature này đã đạt 69,52, và thêm cả văn bản của bước đúng cũng chỉ tăng thêm khoảng 1,6 điểm. Do đó, khoảng cách còn lại với teacher chủ yếu nằm ở input feature chứ không ở kiến trúc head. Ngoài ra, mọi video được lấy mẫu lại về $T = 256$ điểm, nên với video dài, các bước rất ngắn chỉ chiếm vài điểm của tầng mịn nhất.
+
+\textbf{Đánh đổi giữa hai thang đo của embedding.} InfoNCE làm embedding phân biệt các đoạn tốt hơn (OmniR@1 tăng) nhưng kéo embedding xa teacher hơn (OmniCosC giảm); bỏ InfoNCE thì ngược lại (dòng (g) của Bảng~\ref{tab:ablation}). Chưa có cấu hình nào tốt nhất trên cả hai thang đo. Ridge regression bù lại phần OmniCosC, nhưng đó là một phép chiếu tuyến tính cố định, không được học cùng mô hình.
+
+\textbf{Step grounding theo thời điểm.} Mô hình được tối ưu cho việc định vị đoạn và xếp hạng theo mAP. Thời điểm dùng cho R@1 chỉ được lấy là tâm của đoạn có điểm cao nhất, nên R@1 (37,96) còn thấp hơn VINA và các phương pháp training-free dùng mô hình đa phương thức lớn.
+
+\textbf{Phụ thuộc vào teacher.} Embedding của student chỉ tốt bằng teacher và chỉ được học trên các đoạn GT có teacher embedding. Teacher gặp lỗi hay thiên lệch gì thì student cũng thừa hưởng lỗi và thiên lệch đó, và chưa có đánh giá nào cho thấy embedding hữu ích ở các đoạn nằm ngoài GT.
+
+\textbf{Truy hồi bước.} Ở Mục~\ref{sec:retrieval}, checkpoint của OmniRetriever-HT, các tham số $\theta$, $L_{\min}$, $L_{\mathrm{fill}}$, $\beta$ và cách chấm chính đều được chọn trên val\_seen, và $\beta$ nằm ở biên trên của lưới, nên các số trên val lạc quan. Trên YouCook2, cộng vector student vào vector Omni làm R@1 giảm; giả thuyết của chúng tôi là recipe bị đoán sai trên miền khác làm vector student yếu đi, nhưng điều này chưa được đo. Lần chấm benchmark đầu có lỗi lệch giữa câu hỏi và kho video; chúng tôi sửa lỗi, khoá lại giao thức và chấm lại mà không đổi tham số nào. Dữ liệu pretrain của OmniRetriever gốc cũng lấy từ YouTube nên không loại trừ hết khả năng trùng video với benchmark.
 
 \section{Kết luận}
 Bài báo trình bày một mô hình multi-task audio-visual cho instructional video nấu ăn, thực hiện đồng thời step localization, recipe recognition và tạo multimodal embedding cho mỗi đoạn. Trên val\_seen của HT-Step, mô hình đạt mAP 30,99, cao hơn hẳn các phương pháp training-free gần đây và xấp xỉ các mô hình supervised của bài báo gốc. Với multimodal embedding, việc ghép một ridge regression dạng đóng lúc inference tăng OmniCosC gần tám điểm mà không cần huấn luyện lại, và phân tích cận trên cho thấy giới hạn còn lại nằm chủ yếu ở input feature. Hướng tiếp theo gồm dùng frame feature và lời nói giàu hơn, đánh giá trên tập dữ liệu khác, và chạy nhiều seed để có khoảng tin cậy.
 
-Ở phần ứng dụng, các đoạn và segment-wise head của mô hình được dùng làm chỉ mục đa vector cho truy hồi video và định vị khoảnh khắc. Với tham số khoá trên dev, cắt theo sự kiện nâng R@1 zero-shot trên YouCook2 từ 6,56 lên 17,15 với vector Omni; phương pháp đề xuất có tác dụng zero-shot trên YouCook2, cả so với một vector lẫn so với cắt đều (+7,45 và +4,77 điểm R@1), và ranh giới sự kiện giúp định vị đúng khoảnh khắc. Tuy vậy, trên YouCook2 việc cộng vector student vào vector Omni làm R@1 giảm, lợi thế so với cắt đều theo độ dài chưa phân biệt được, và kết quả chỉ đo trên 635 video với một seed.
+Ở phần ứng dụng, các đoạn và segment-wise head của mô hình được dùng làm chỉ mục đa vector cho truy hồi video và định vị khoảnh khắc. Với tham số khoá trên val, cắt theo sự kiện nâng R@1 zero-shot trên YouCook2 từ 6,56 lên 17,15 với vector Omni; phương pháp đề xuất có tác dụng zero-shot trên YouCook2, cả so với một vector lẫn so với cắt đều (+7,45 và +4,77 điểm R@1), và ranh giới sự kiện giúp định vị đúng khoảnh khắc. Tuy vậy, trên YouCook2 việc cộng vector student vào vector Omni làm R@1 giảm, lợi thế so với cắt đều theo độ dài chưa phân biệt được, và mỗi cấu hình chỉ chạy một seed.
 
 \begin{thebibliography}{00}
 \bibitem{htstep} T. Afouras, E. Mavroudi, T. Nagarajan, H. Wang, and L. Torresani, ``HT-Step: Aligning instructional articles with how-to videos,'' in \textit{Proc. NeurIPS Datasets and Benchmarks Track}, 2023.
