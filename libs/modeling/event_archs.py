@@ -65,7 +65,7 @@ class EventCaptionTransformer(nn.Module):
         # condition the features on the article's step texts (ActionFormer-T of the HT-Step paper)
         self.article_cond = ArticleCondition(D, clip_dim)
         # predict the video's article from the video, so it needs not be given at inference
-        self.article_head = ArticleHead(D, head_dim, clip_dim, num_articles)
+        self.article_head = ArticleHead(D, head_dim, clip_dim, num_articles, len(self.fpn_strides))
 
         # omni: the model learns the OmniRetriever vector (teacher) of every GT segment, twice:
         #   - point head (in embed_head): every point inside a GT segment predicts the vector of its segment

@@ -95,7 +95,7 @@ cfg = {
         'learning_rate': 0.0003,   # batch 32: 1e-4 at batch 4 scaled by sqrt(8)
         'clip_proj_lr': 0.003,
         'weight_decay': 0.0001,
-        'epochs': 10,
+        'epochs': 13,
         'warmup_epochs': 2,
     },
 }

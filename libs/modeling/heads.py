@@ -130,7 +130,7 @@ def segment_masks(
     segs,     # (B, N, 2) segments (start, end), in steps
     T,        # steps of the padded videos
 ):
-    """(B, N, T) bool: True at the steps of every segment. A segment covers at least one step."""
+    """Apply mask for each segments."""
     length = length.long()[:, None]                                         # (B, 1)
     lo = torch.minimum(segs[..., 0].floor().long().clamp(min=0), length - 1)  # (B, N) first step
     hi = torch.minimum(segs[..., 1].ceil().long() + 1, length)
@@ -294,7 +294,11 @@ class ArticleCondition(nn.Module):
 
 class ArticleHead(nn.Module):
     """Picks the video's article (recipe) by its text, so the article needs not be given at inference.
-    logits = scale * pooled video @ article vectors; an article vector is the mean of its step text vectors."""
+    logits = scale * video vector @ article vectors; an article vector is the mean of its step text vectors.
+
+    Video vector: the steps of every pyramid level in one set, each tagged with a learned embedding of its level
+    (fine steps for the details, coarse steps for the whole video), compressed by AttentionPool.
+    """
 
     def __init__(
         self,
@@ -302,30 +306,18 @@ class ArticleHead(nn.Module):
         head_dim,          # size of the video and article vectors (512)
         text_dim=512,      # size of the step text vectors
         num_articles=617,  # every article also gets its own learned vector, added to its text vector
+        n_levels=6,        # pyramid levels
+        n_queries=4,       # learned queries of the attention pooling
+        hidden=2048,       # hidden size of the pooling MLP
     ):
         super().__init__()
-        self.vid = nn.Sequential(
-            nn.Linear(2 * dim, head_dim),
-            nn.GELU(),
-            nn.Linear(head_dim, head_dim)
-        )
+        self.level_emb = nn.Parameter(torch.zeros(n_levels, dim))   # (L, dim), zero at start
+        self.vid = AttentionPool(dim, head_dim, n_queries, hidden)
         self.txt = nn.Linear(text_dim, head_dim)
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
         # learned part of every article vector. It starts at 0, so at first an article is its text only; with
         # ~9 train videos per article it can learn what the text does not tell apart (similar dishes)
         self.article_learned = nn.Parameter(torch.zeros(num_articles, head_dim))
-
-    def pool(
-        self,
-        feats,  # per level (B, D, T_l) pyramid features
-        masks,  # per level (B, 1, T_l) bool, True = real step
-    ):
-        """Mean and max over the real steps of every level (all levels in one set), concatenated: (B, 2D)."""
-        f = torch.cat(feats, dim=-1)                    # (B, D, P) the steps of the 6 levels
-        m = torch.cat(masks, dim=-1).to(f.dtype)        # (B, 1, P)
-        mean = (f * m).sum(-1) / m.sum(-1).clamp(min=1) # (B, D)
-        mx = f.masked_fill(m == 0, -1e4).max(-1).values # (B, D)
-        return torch.cat((mean, mx), -1) # (B, 2D)
 
     def forward(
         self,
@@ -333,7 +325,9 @@ class ArticleHead(nn.Module):
         masks,    # per level (B, 1, T_l) bool, True = real step
         art_txt,  # (A, text_dim) article vectors
     ):
-        v = F.normalize(self.vid(self.pool(feats, masks)), dim=-1)      # (B, head_dim) mean + max, then MLP
+        x = torch.cat([f.transpose(1, 2) + self.level_emb[l] for l, f in enumerate(feats)], dim=1)   # (B, P, D)
+        m = torch.cat(masks, dim=-1)                                    # (B, 1, P): one set per video, its real steps
+        v = F.normalize(self.vid(x, m)[:, 0], dim=-1)                   # (B, head_dim)
 
         t = F.normalize(self.txt(art_txt) + self.article_learned, dim=-1)   # (A, head_dim)
 
