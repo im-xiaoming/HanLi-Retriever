@@ -35,7 +35,7 @@ def valid_one_epoch(
     preds, gt_all = [], []
     art_ok = []
     omni_students, omni_teachers = [], []   # one (n, 3584) tensor per video with omni teacher vectors
-    omni_span_st, omni_point_st = [], []     # the span head and point head alone (omni_student = both combined)
+    omni_parts = {'span': [], 'pt': [], 'heads': [], 'ridge': []}   # each part alone (omni_student = combined)
     for video_list in val_loader:
         for x in video_list:
             x['feats'] = {k: v.to(device) for k, v in x['feats'].items()}
@@ -60,14 +60,19 @@ def valid_one_epoch(
             art_ok.append(r['article_pred'] == x['article'])
             omni_students.append(r['omni_student'])
             omni_teachers.append(r['omni_teacher'])
-            omni_span_st.append(r['omni_student_span'])
-            omni_point_st.append(r['omni_student_point'])
+            omni_parts['span'].append(r['omni_student_span'])
+            omni_parts['pt'].append(r['omni_student_point'])
+            omni_parts['heads'].append(r['omni_student_heads'])
+            if r['omni_student_ridge'] is not None:
+                omni_parts['ridge'].append(r['omni_student_ridge'])
 
     if pred_csv:
         write_predictions_csv(preds, pool_ids, pred_csv)
     omni_cos_c, omni_r1 = omni_student_teacher_scores(omni_students, omni_teachers, model.omni_teacher_mean)
-    span_cos_c, span_r1 = omni_student_teacher_scores(omni_span_st, omni_teachers, model.omni_teacher_mean)
-    point_cos_c, point_r1 = omni_student_teacher_scores(omni_point_st, omni_teachers, model.omni_teacher_mean)
+    parts = {}   # OmniCosC_<part>, OmniR@1_<part>
+    for name, vecs in omni_parts.items():
+        c, r1 = omni_student_teacher_scores(vecs, omni_teachers, model.omni_teacher_mean) if vecs else (0.0, 0.0)
+        parts[f'OmniCosC_{name}'], parts[f'OmniR@1_{name}'] = c, r1
     best_ious = np.array(best_ious)
     return {'R@0.3': float(100 * np.mean(best_ious >= 0.3)),
             'R@0.5': float(100 * np.mean(best_ious >= 0.5)),
@@ -79,5 +84,4 @@ def valid_one_epoch(
             'ArtAcc': float(100 * np.mean(art_ok)),
             'OmniCosC': omni_cos_c,
             'OmniR@1': omni_r1,
-            'OmniCosC_span': span_cos_c, 'OmniR@1_span': span_r1,      # span head alone
-            'OmniCosC_pt': point_cos_c, 'OmniR@1_pt': point_r1}        # point head alone
+            **parts}   # span head, point head, the two heads, ridge, each alone

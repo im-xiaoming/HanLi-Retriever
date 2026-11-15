@@ -3,6 +3,7 @@ import torch
 from torch.nn import functional as F
 
 from ..utils import batched_nms
+from .omni_ridge import segment_inputs, predict_omni_ridge
 
 
 @torch.no_grad()
@@ -13,13 +14,17 @@ def omni_gt_vectors(
     lens,       # (1, L) real steps of the video at every level
     omni_em,    # (P, 3584) point head: normalised omni vector of every point of the video
     valid,      # (P,) bool, True at points of real steps
+    ridge=None,         # fit_omni_ridge output (model.omni_ridge), or None
+    teacher_mean=None,  # (3584,) mean of the train teacher vectors, for the ridge
 ):
     """Student vectors of every GT segment of the video that has a teacher (start and end given), from:
     span   : the span head
     point  : the point head, mean of the vectors of the points assigned to the segment (the same points as in
              training: gt_cls_labels); a segment without any such point takes the span vector
-    student: the two combined, normalize(span + point) (both unit vectors, so the same weight)
-    Returns the three (n', 3584) and the teachers (n', 3584)."""
+    heads  : the two heads combined, normalize(span + point) (both unit vectors, so the same weight)
+    ridge  : the ridge regression from the input features of the segment (omni_ridge.py), if fitted
+    student: heads and ridge combined, normalize(heads + ridge); = heads without a ridge
+    Returns a dict of these (n', 3584) vectors and the teachers (n', 3584)."""
     dev = feats[0].device
     labels = video['labels']
     has_teacher = video['omni_ok'][labels]                                    # (n,)
@@ -33,9 +38,14 @@ def omni_gt_vectors(
     point = F.normalize(w @ omni_em, dim=-1)                                  # (n', 3584) mean direction
     point = torch.where(n_pts > 0, point, span)                               # no point: the span vector
 
-    student = F.normalize(span + point, dim=-1)
-    teachers = video['omni_seg'][labels][has_teacher]                         # (n', 3584)
-    return student.cpu(), span.cpu(), point.cpu(), teachers.cpu()
+    heads = F.normalize(span + point, dim=-1)
+    out = {'span': span, 'point': point, 'heads': heads, 'student': heads}
+    if ridge is not None:
+        inputs = segment_inputs(video['feats']['visual'], video['feats']['audio'], segments)   # (n', 4608)
+        out['ridge'] = predict_omni_ridge(ridge, inputs, teacher_mean).to(heads.dtype)
+        out['student'] = F.normalize(heads + out['ridge'], dim=-1)
+    out['teacher'] = video['omni_seg'][labels][has_teacher]                   # (n', 3584)
+    return {k: v.cpu() for k, v in out.items()}
 
 
 @torch.no_grad()
@@ -107,13 +117,14 @@ def event_inference(
         segs = ((segs * st + 0.5 * nf) / fps).clamp(min=0.0, max=float(v['duration']))
 
         # omni: student (span + point heads) and teacher vector of every GT segment, for the distance between them
-        omni_student, omni_span_st, omni_point_st, omni_teacher = omni_gt_vectors(
-            model.omni_span, v, [f[b:b + 1] for f in feats], lens[b:b + 1], omni_em[b], valid[b])
+        omni = omni_gt_vectors(model.omni_span, v, [f[b:b + 1] for f in feats], lens[b:b + 1], omni_em[b],
+                               valid[b], model.omni_ridge, model.omni_teacher_mean)
 
         out.append({'video_id': v['video_id'], 'segments': segs, 'scores': scores,
                     'labels': cand[j].cpu(), 'label_probs': lp.exp().cpu(),
                     'article_pred': int(art_logits[b].argmax()),
-                    'omni_student': omni_student, 'omni_teacher': omni_teacher,
-                    'omni_student_span': omni_span_st, 'omni_student_point': omni_point_st,
+                    'omni_student': omni['student'], 'omni_teacher': omni['teacher'],
+                    'omni_student_span': omni['span'], 'omni_student_point': omni['point'],
+                    'omni_student_heads': omni['heads'], 'omni_student_ridge': omni.get('ridge'),
                     'gt_segments': v['segments_sec'], 'gt_text': v['cap_text']})
     return out

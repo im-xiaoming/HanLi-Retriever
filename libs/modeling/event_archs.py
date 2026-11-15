@@ -74,6 +74,9 @@ class EventCaptionTransformer(nn.Module):
         # mean of the train teacher vectors (the part every segment shares); set by train.py. Used by the OmniCosC
         # metric, the centred omni cos loss and the omni heads (their outputs are deviations around it)
         self.omni_teacher_mean = None
+        # ridge regression input features -> teacher, combined with the omni heads at inference (omni_ridge.py);
+        # fitted by train.py on the train segments, not saved in the checkpoints
+        self.omni_ridge = None
         # teachers of the last batches, extra negatives of the omni InfoNCE (not saved in the checkpoints)
         self.omni_queue = TeacherQueue(train_cfg['omni_queue_size'])
 

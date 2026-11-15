@@ -14,6 +14,7 @@ from torch.utils.data import DistributedSampler, SequentialSampler
 from libs.core import cfg
 from libs.datasets import make_dataset, make_data_loader
 from libs.modeling import make_multimodal_meta_arch
+from libs.modeling.omni_ridge import fit_omni_ridge
 from libs.utils import (train_one_epoch, save_checkpoint,
                         make_optimizer, make_scheduler, fix_random_seed, ModelEma, RunRecord)
 from benchmark import valid_one_epoch
@@ -57,9 +58,9 @@ def metrics_line(m):
     """One line with the validation metrics."""
     names = ['R@0.5', 'mIoU', 'Acc', 'mAP', 'ArtAcc', 'OmniCosC', 'OmniR@1']
     line = '  '.join(f"{name} {m[name]:.2f}" for name in names)
-    # omni of the span head and the point head alone (OmniCosC / OmniR@1 = the two combined)
-    return line + '  [span %.2f/%.2f  pt %.2f/%.2f]' % (m['OmniCosC_span'], m['OmniR@1_span'],
-                                                         m['OmniCosC_pt'], m['OmniR@1_pt'])
+    # omni CosC/R@1 of every part alone (OmniCosC / OmniR@1 = heads + ridge combined)
+    return line + '  [' + '  '.join('%s %.2f/%.2f' % (p, m[f'OmniCosC_{p}'], m[f'OmniR@1_{p}'])
+                                    for p in ('span', 'pt', 'heads', 'ridge')) + ']'
 
 
 def main(args):
@@ -108,6 +109,11 @@ def main(args):
     )
     # mean of the train teacher vectors, removed by the OmniCosC metric
     model.omni_teacher_mean = torch.from_numpy(train_dataset.omni_teacher_mean()).to(device)
+    # ridge regression input features -> teacher, combined with the omni heads at inference (only process 0
+    # evaluates); fitted on the train split without the random crop
+    if is_main:
+        model.omni_ridge = fit_omni_ridge(make_dataset('htstep', False, ['train'], **data_cfg),
+                                          model.omni_teacher_mean, device)
     # print('Parameters: %.1fM' % (sum(p.numel() for p in model.parameters()) / 1e6))
 
     if args.eval:   # score a checkpoint, no training
@@ -131,6 +137,7 @@ def main(args):
     model_ema = ModelEma(model, cfg['train_cfg']['ema_decay'])
     model_ema.module.set_step_pool(model.pool_raw, model.article_steps)
     model_ema.module.omni_teacher_mean = model.omni_teacher_mean
+    model_ema.module.omni_ridge = model.omni_ridge
     record = RunRecord(cfg, world_size) if is_main else None
 
     """4. train / evaluate loop"""
