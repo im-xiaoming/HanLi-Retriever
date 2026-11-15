@@ -17,7 +17,8 @@ def event_losses(
     raw0,        # (B, D, T) level-0 features of the embedding head, not normalised (for the span means)
     len0,        # (B,) real level-0 steps of every video
     art_logits,  # (B, A) article head logits
-    feat0,       # (B, D, T) level-0 pyramid features (for the omni span head)
+    feats,       # per level (B, D, T_l) pyramid features (for the omni span head)
+    lens,        # (B, L) real steps of every level
 ):
     dev = ev.device
     w = model.train_cfg
@@ -54,7 +55,7 @@ def event_losses(
     #                                       cosin matrix
 
     # <<<<<<<<<<<<<<<< Omni >>>>>>>>>>>>>>
-    omni_point, omni_span = omni_losses(model.omni_span, video_list, pos, gt_cls, omni_em, feat0, len0,
+    omni_point, omni_span = omni_losses(model.omni_span, video_list, pos, gt_cls, omni_em, feats, lens,
                                         w['omni_temperature'], model.omni_queue, w['omni_nce_temperature'])
 
     # =========================================== Span Loss =========================================

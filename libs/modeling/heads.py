@@ -175,26 +175,38 @@ class AttentionPool(nn.Module):
 
 
 class OmniSpanHead(nn.Module):
+    """One OmniRetriever vector for a whole segment, from every pyramid level.
+
+    A segment [start, end] (level-0 steps) covers [start / s_l, end / s_l] at level l (stride s_l): its steps of
+    the 6 levels are put in one set (fine steps for the details, coarse steps for the context), each tagged with a
+    learned embedding of its level, and AttentionPool compresses the set into one vector.
+    """
 
     def __init__(
         self,
-        dim,            # channels of the level-0 features (1024)
+        dim,            # channels of the pyramid features (1024)
         out_dim=3584,   # size of the OmniRetriever vectors
         n_queries=8,    # learned queries of the attention pooling
         hidden=4096,    # hidden size of the MLP
+        strides=(1,),   # stride of every pyramid level, in level-0 steps
     ):
         super().__init__()
+        self.strides = list(strides)
+        self.level_emb = nn.Parameter(torch.zeros(len(self.strides), dim))   # (L, dim), zero at start
         self.pool = AttentionPool(dim, out_dim, n_queries, hidden)
 
     def forward(
         self,
-        feat0,    # (D, T) level-0 features of one video
-        length,   # real level-0 steps of the video
+        feats,    # per level (D, T_l) features of one video
+        lengths,  # per level, real steps of the video
         segs,     # (N, 2) segments (start, end) in level-0 steps
     ):
-        masks = segment_masks(length, segs, feat0.shape[1])            # (N, T)
-        x = feat0.t()[None].expand(len(segs), -1, -1)                  # (N, T, D) the same video for every segment
-        return F.normalize(self.pool(x, masks), dim=-1)                # (N, out_dim)
+        xs, masks = [], []
+        for l, (f, n, s) in enumerate(zip(feats, lengths, self.strides)):
+            xs.append(f.t() + self.level_emb[l])                                  # (T_l, D)
+            masks.append(segment_masks(int(n), segs / s, f.shape[1]))             # (N, T_l)
+        x = torch.cat(xs)[None].expand(len(segs), -1, -1)       # (N, P, D) every level, the same for every segment
+        return F.normalize(self.pool(x, torch.cat(masks, dim=1)), dim=-1)          # (N, out_dim)
 
 
 class SegmentContext(nn.Module):

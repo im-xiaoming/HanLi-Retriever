@@ -187,8 +187,8 @@ def omni_losses(
     pos,         # (B, P) bool, points inside a GT segment
     gt_cls,      # (B, P, 48) one-hot: the GT segment (slot) of every point
     omni_em,     # (B, P, 3584) point head: student vector of every point, L2-normalised
-    feat0,       # (B, D, T) level-0 pyramid features, read by the span head
-    len0,        # (B,) real level-0 steps of every video
+    feats,       # per level (B, D, T_l) pyramid features, read by the span head
+    lens,        # (B, L) real steps of every level
     temperature=0.05,
     queue=None,      # TeacherQueue: teachers of earlier batches, extra negatives of the nce; the batch is added after
     nce_temperature=0.05,
@@ -228,7 +228,7 @@ def omni_losses(
         target = teacher_row[b, x['labels'].to(dev)]    # (n,) row of the teacher of every GT segment left
         keep = target >= 0
         segments = x['segments'].to(dev).float()[keep]  # (n', 2) start and end, in level-0 steps
-        span_students.append(span(feat0[b], int(len0[b]), segments))   # (n', 3584)
+        span_students.append(span([f[b] for f in feats], lens[b].tolist(), segments))   # (n', 3584)
         span_target.append(target[keep])
     span_losses = omni_distill_loss(torch.cat(span_students), teachers, torch.cat(span_target), temperature,
                                     bank, nce_temperature)

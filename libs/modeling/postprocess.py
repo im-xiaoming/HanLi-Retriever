@@ -9,13 +9,13 @@ from ..utils import batched_nms
 def omni_gt_vectors(
     omni_span,  # the omni span head of the model
     video,      # the dict of one validation video (segments in steps, omni_seg, omni_ok)
-    feat0,      # (D, T) level-0 pyramid features of the video
-    length,     # real level-0 steps of the video
+    feats,      # per level (D, T_l) pyramid features of the video
+    lengths,    # per level, real steps of the video
 ):
     """Span head vs teacher on every GT segment of the video that has a teacher (start and end given)."""
     has_teacher = video['omni_ok'][video['labels']]                          # (n,)
-    segments = video['segments'][has_teacher].to(feat0.device).float()       # (n', 2) in steps
-    students = omni_span(feat0, length, segments)                             # (n', 3584)
+    segments = video['segments'][has_teacher].to(feats[0].device).float()       # (n', 2) in steps
+    students = omni_span(feats, lengths, segments)                             # (n', 3584)
     teachers = video['omni_seg'][video['labels']][has_teacher]                # (n', 3584)
     return students.cpu(), teachers.cpu()
 
@@ -32,7 +32,8 @@ def event_inference(
     len0,        # (B,) real level-0 steps of every video
     cands,       # [B] pool rows of every video's article steps (given)
     art_logits,  # (B, A) article head logits
-    feat0,       # (B, D, T) level-0 pyramid features (for the omni span head)
+    feats,       # per level (B, D, T_l) pyramid features (for the omni span head)
+    lens,        # (B, L) real steps of every level
 ):
     """Score of a segment = event score times IoU-quality score. Returns one dict per video:
     segments (K, 2) in seconds, best first; labels (K,) the step of every segment, label_probs (K,) its
@@ -87,7 +88,7 @@ def event_inference(
         segs = ((segs * st + 0.5 * nf) / fps).clamp(min=0.0, max=float(v['duration']))
 
         # omni span head: student and teacher vector of every GT segment, for the distance between them
-        omni_student, omni_teacher = omni_gt_vectors(model.omni_span, v, feat0[b], int(len0[b]))
+        omni_student, omni_teacher = omni_gt_vectors(model.omni_span, v, [f[b] for f in feats], lens[b].tolist())
 
         out.append({'video_id': v['video_id'], 'segments': segs, 'scores': scores,
                     'labels': cand[j].cpu(), 'label_probs': lp.exp().cpu(),

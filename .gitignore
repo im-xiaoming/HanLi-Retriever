@@ -28,3 +28,5 @@ ckpt/*
 Omni-Retriever
 venv
 htstep-omni-av-best
+NUL
+*.docx

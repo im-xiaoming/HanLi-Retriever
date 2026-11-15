@@ -70,7 +70,7 @@ class EventCaptionTransformer(nn.Module):
         # omni: the model learns the OmniRetriever vector (teacher) of every GT segment, twice:
         #   - point head (in embed_head): every point inside a GT segment predicts the vector of its segment
         #   - span head: given the start and end of a segment, one vector for the whole segment
-        self.omni_span = OmniSpanHead(D, omni_head_dim, pool_queries, omni_span_hidden)
+        self.omni_span = OmniSpanHead(D, omni_head_dim, pool_queries, omni_span_hidden, self.fpn_strides)
         # mean of the train teacher vectors (the part every segment shares), for the OmniCosC metric; set by train.py
         self.omni_teacher_mean = None
         # teachers of the last batches, extra negatives of the omni InfoNCE (not saved in the checkpoints)
@@ -144,9 +144,10 @@ class EventCaptionTransformer(nn.Module):
 
         #       (B, 1, T)
         len0 = msk[0].squeeze(1).sum(-1)                                 # (B,)
+        lens = torch.stack([m.squeeze(1).sum(-1) for m in msk], dim=1)    # (B, L) real steps of every level
         #                         (B, T)
         fpn_masks = torch.cat([m.squeeze(1) for m in msk], dim=1)        # (B, P)
         if self.training:
             return event_losses(self, video_list, fpn_masks, ev, bd, qu, em, omni_em, raw0, len0, art_logits,
-                                feats[0])
-        return event_inference(self, video_list, fpn_masks, ev, bd, qu, raw0, len0, cands, art_logits, feats[0])
+                                feats, lens)
+        return event_inference(self, video_list, fpn_masks, ev, bd, qu, raw0, len0, cands, art_logits, feats, lens)
