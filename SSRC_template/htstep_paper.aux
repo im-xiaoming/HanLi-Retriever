@@ -28,12 +28,12 @@
 \citation{moco}
 \citation{internvideo2}
 \citation{beats}
+\citation{omniretriever}
 \@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Ví dụ trên một video của tập val\_seen (``Make Wonton Soup'', 4 phút). \emph  {Hàng trên}: đoạn từ 2:40 đến 3:50, nơi chứa các bước của recipe; thanh \textcolor {red}{đỏ} là đoạn ground truth kèm tên bước, thanh và khung \textcolor {green!50!black}{xanh} là đoạn mô hình dự đoán kèm bước được chọn. Mô hình định vị đúng ba đoạn (IoU 0,83; 0,91; 0,73) và chọn đúng bước cho cả ba, nhưng bỏ sót lần ``Boil the wontons'' thứ hai ở cuối video. \emph  {Hàng dưới}: embedding 3584 chiều của từng đoạn, do teacher OmniRetriever (7 tỉ tham số) và do mô hình của chúng tôi (137 triệu tham số) tạo ra; để dễ nhìn, mỗi embedding được trừ trung bình rồi gộp thành 72 ô. Hai embedding có mean-centered cosine từ 0,76 đến 0,85.}}{2}{figure.1}\protected@file@percent }
 \newlabel{fig:teaser}{{1}{2}{Ví dụ trên một video của tập val\_seen (``Make Wonton Soup'', 4 phút). \emph {Hàng trên}: đoạn từ 2:40 đến 3:50, nơi chứa các bước của recipe; thanh \textcolor {red}{đỏ} là đoạn ground truth kèm tên bước, thanh và khung \textcolor {green!50!black}{xanh} là đoạn mô hình dự đoán kèm bước được chọn. Mô hình định vị đúng ba đoạn (IoU 0,83; 0,91; 0,73) và chọn đúng bước cho cả ba, nhưng bỏ sót lần ``Boil the wontons'' thứ hai ở cuối video. \emph {Hàng dưới}: embedding 3584 chiều của từng đoạn, do teacher OmniRetriever (7 tỉ tham số) và do mô hình của chúng tôi (137 triệu tham số) tạo ra; để dễ nhìn, mỗi embedding được trừ trung bình rồi gộp thành 72 ô. Hai embedding có mean-centered cosine từ 0,76 đến 0,85}{figure.1}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {II}Công trình liên quan}{2}{section.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {III}Phương pháp}{2}{section.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-A}}Dữ liệu vào và bài toán}{2}{subsection.3.1}\protected@file@percent }
-\citation{omniretriever}
 \citation{actionformer}
 \citation{uniav}
 \citation{htstep}
@@ -44,9 +44,9 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Backbone audio-visual}{3}{subsection.3.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-C}}Recipe conditioning}{3}{subsection.3.3}\protected@file@percent }
 \newlabel{eq:artc}{{1}{3}{Recipe conditioning}{equation.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-D}}Localization head và step classification}{3}{subsection.3.4}\protected@file@percent }
 \@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Recipe conditioning. Văn bản các bước của recipe ($C$ bước, mỗi bước một vector 512 chiều) được chiếu lên 1024 chiều, chuẩn hoá bằng LayerNorm và cộng với embedding thứ tự của bước trong recipe, tạo thành key và value. Feature $\mathbf  {F}_l$ của mỗi tầng, sau LayerNorm, đóng vai trò query. Nhờ multi-head attention (8 head), mỗi thời điểm trong video tìm những bước của recipe giống nó nhất và lấy thông tin từ các bước đó. Kết quả qua một lớp chiếu ra, nhân với mask để bỏ các vị trí padding, rồi được cộng residual vào $\mathbf  {F}_l$, cho feature $\mathbf  {F}'_l$. Lớp chiếu ra được khởi tạo bằng 0, nên lúc bắt đầu huấn luyện khối này chưa làm thay đổi feature và chỉ dần học cách dùng văn bản. Cùng một khối được dùng cho cả sáu tầng của pyramid.}}{3}{figure.3}\protected@file@percent }
 \newlabel{fig:recipecond}{{3}{3}{Recipe conditioning. Văn bản các bước của recipe ($C$ bước, mỗi bước một vector 512 chiều) được chiếu lên 1024 chiều, chuẩn hoá bằng LayerNorm và cộng với embedding thứ tự của bước trong recipe, tạo thành key và value. Feature $\mathbf {F}_l$ của mỗi tầng, sau LayerNorm, đóng vai trò query. Nhờ multi-head attention (8 head), mỗi thời điểm trong video tìm những bước của recipe giống nó nhất và lấy thông tin từ các bước đó. Kết quả qua một lớp chiếu ra, nhân với mask để bỏ các vị trí padding, rồi được cộng residual vào $\mathbf {F}_l$, cho feature $\mathbf {F}'_l$. Lớp chiếu ra được khởi tạo bằng 0, nên lúc bắt đầu huấn luyện khối này chưa làm thay đổi feature và chỉ dần học cách dùng văn bản. Cùng một khối được dùng cho cả sáu tầng của pyramid}{figure.3}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-D}}Localization head và step classification}{3}{subsection.3.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-E}}Recipe head}{3}{subsection.3.5}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-F}}Distillation cho multimodal embedding}{3}{subsection.3.6}\protected@file@percent }
 \citation{baglm,hsd}
@@ -135,5 +135,5 @@
 \newlabel{tab:ret_dev}{{VII}{8}{R@1 multi-positive của ba cách chấm và VCMR R@1 của cách chấm Omni, trên dev và YouCook2 (zero-shot, 635 video)}{table.7}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {VIII}{\ignorespaces Hiệu R@1 multi-positive và CI 95\% trên dev và YouCook2}}{8}{table.8}\protected@file@percent }
 \newlabel{tab:ret_pairs}{{VIII}{8}{Hiệu R@1 multi-positive và CI 95\% trên dev và YouCook2}{table.8}{}}
-\@writefile{toc}{\contentsline {section}{T\`ai li\d \ecircumflex u}{8}{section*.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{T\`ai li\d \ecircumflex u}{8}{section*.1}\protected@file@percent }
 \gdef \@abspage@last{8}
